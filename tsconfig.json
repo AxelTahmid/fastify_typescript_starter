@@ -1,52 +1,35 @@
 {
-    "include": ["src/**/*.ts"],
-    "exclude": ["node_modules", "test/**/*.ts"],
+    "$schema": "https://json.schemastore.org/tsconfig",
     "compilerOptions": {
-        "lib": ["es2020"],
-        "target": "es2024",
-        "module": "NodeNext",
-        "outDir": "dist",
-        "esModuleInterop": true,
         "strict": true,
+        "outDir": "dist",
+        "target": "ESNext",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "lib": ["ESNext"],
+        "sourceMap": false,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
-        // "resolveJsonModule": true,
+        "resolveJsonModule": true,
         "removeComments": true,
         "noUnusedLocals": true,
         "isolatedModules": true,
         "noFallthroughCasesInSwitch": true,
-        "forceConsistentCasingInFileNames": true,
+        "newLine": "lf",
         "baseUrl": "./src",
         "paths": {
-            "@app/*": ["app/*"],
-            "@plugins/*": ["plugins/*"],
-            "@database/*": ["database/*"],
-            "@config/*": ["config/*"],
-            "@queue/*": ["queue/*"]
-        },
-        "typeRoots": [
-            "node",
-            "@types",
-            "fastify",
-            "bullmq",
-            "knex",
-            "ioredis",
-            "@aws-sdk/client-s3",
-            "fluent-json-schema",
-            "close-with-grace",
-            "@sinclair/typebox",
-            "@fastify/cors",
-            "@fastify/formbody",
-            "@fastify/helmet",
-            "@fastify/jwt",
-            "@fastify/multipart",
-            "@fastify/rate-limit",
-            "@fastify/sensible",
-            "@fastify/under-pressure",
-            "openapi-types"
-        ]
+            "#app/*": ["app/*"],
+            "#plugins/*": ["plugins/*"],
+            "#database/*": ["database/*"],
+            "#config/*": ["config/*"],
+            "#queue/*": ["queue/*"]
+        }
     },
     "watchOptions": {
         "watchFile": "dynamicPriorityPolling"
-        // "fallbackPolling": "fixedinterval"
-    }
+    },
+    "include": ["src/**/*.ts", "src/**/*.d.ts"],
+    "exclude": ["node_modules", "test/**/*.ts"]
 }

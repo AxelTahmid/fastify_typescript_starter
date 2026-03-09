@@ -1,34 +1,28 @@
-FROM node:22-slim AS base
+FROM gcr.io/distroless/nodejs24-debian12 AS runner
+FROM node:24-trixie AS base
 
-# --------> The development image
 FROM base AS dev
 WORKDIR /app
-# RUN npm install -g node-gyp
 COPY .yarn ./.yarn
-COPY [".yarnrc.yml", "package.json", "yarn.lock", "./"]
-# COPY . .
+COPY .yarnrc.yml package.json yarn.lock ./
 RUN yarn install
+RUN npm install -g tsx
 CMD ["yarn", "dev"]
-
-# --------> The build image
-FROM base AS build
-WORKDIR /app
-# RUN npm install -g node-gyp
-COPY . .
-RUN yarn install --frozen-lockfile
-RUN yarn build
 
 FROM base AS deps
 WORKDIR /app
 COPY .yarn ./.yarn
-COPY [".yarnrc.yml", "package.json", "yarn.lock", "./"]
+COPY .yarnrc.yml package.json yarn.lock ./
 RUN yarn workspaces focus --production
 
-# --------> The production image
-FROM gcr.io/distroless/nodejs22-debian12 AS prod
+FROM base AS build
+WORKDIR /app
+COPY . .
+RUN yarn install
+RUN yarn build
+
+FROM runner AS prod
 WORKDIR /app
 COPY --from=build /app/dist/ ./
 COPY --from=deps /app/node_modules ./node_modules
-# use 70-75% of you container runtime as limit for memory
-# ENTRYPOINT ["/usr/bin/node", "--max-old-space-size=200"]
-CMD ["server.js"]
+CMD ["--max-old-space-size=512", "server.js"]

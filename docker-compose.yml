@@ -1,7 +1,12 @@
 services:
-  api:
+  app:
     container_name: "api"
     env_file: .env
+    environment:
+      - DB_HOST=db
+      - PG_CONNECTION_STRING=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=500
     build:
       context: .
       target: dev
@@ -11,33 +16,31 @@ services:
     tty: true
     volumes:
       - ".:/app:delegated"
-      - "api_node_modules:/app/node_modules"
+      - "starter_node_modules:/app/node_modules"
     links:
       - database
-      - redis
     depends_on:
       database:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      mailpit:
+        condition: service_started
     networks:
       - starter
-    restart: always
 
   database:
-    image: "postgres:17.4-bookworm"
+    image: "postgres:18.2-trixie"
     container_name: db
     env_file: ".env"
     environment:
-      POSTGRES_PASSWORD: ${DB_ROOT_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: "${DB_NAME}"
+      POSTGRES_USER: "${DB_USER}"
     ports:
       - 5432:5432
     expose:
       - "5432"
     volumes:
-      - "db_data:/var/lib/postgresql/data"
+      - "starter_db_data:/var/lib/postgresql"
     healthcheck:
       test: ["CMD", "pg_isready", "-q", "-d", "${DB_NAME}", "-U", "${DB_USER}"]
       interval: 10s
@@ -45,26 +48,24 @@ services:
       retries: 3
     networks:
       - starter
-    restart: on-failure
 
-  redis:
-    image: "redis:alpine"
-    container_name: "redis"
-    expose:
-      - "6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_SMTP_AUTH_ALLOW_INSECURE=true
+      - MP_MAX_MESSAGES=1000
     networks:
       - starter
-    restart: on-failure
+    restart: unless-stopped
 
 volumes:
-  db_data:
-  api_node_modules:
+  starter_db_data:
+  starter_node_modules:
 
 networks:
   starter:
-    # external: true
