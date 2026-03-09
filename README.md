@@ -1,138 +1,129 @@
-# Fastify Starter Template
+# Fastify TypeScript Starter
 
-This is a fastify typescript starter template with some batteries included:
+This template is the updated starter behind `acs-backend`, with the app-specific commerce modules removed and the infrastructure kept generic.
 
-- Postgres with Knex.js
-- Auth & OTP verification
-- BullMQ for queue
-- User CRUD & Role
-- Global Error Handler with formatted response
-- S3 / Object Storage Adapter
-- Performant linting & formatting using rust based `Biome`
-- OpenAPI 3.1 Doc Generation
+Included by default:
 
-## Project Structure
+- Fastify 5 + TypeScript
+- PostgreSQL with Kysely
+- `pg-boss` background jobs
+- Database-backed cache service
+- MinIO / S3-compatible object storage adapter
+- JWT auth with env-embedded keys
+- Auto-registered shared schemas
+- OpenAPI 3.1 docs with Scalar UI
+- Docker Compose, Mailpit, Biome, Lefthook, and Makefile helpers
 
-```sh
-PROJECT/
-    ├── .vscode                      # VSCode Configs
-    ├── .yarn/                       # Contains yarn script
-    ├── cert/                        # Certificates & Keys
-    ├── docs/                        # Project documentations
-    │   └── bruno/                   # Bruno collection for exploring api
-    ├── src/                         # Typescript code directory
-    │   ├── app/                     # Encapsulted Applicaton Logic
-    │   │   ├── auth/
-    │   │   │   ├── handler.ts       # Http handler, validation & serialization
-    │   │   │   ├── service.ts       # Business logic aka. service
-    │   │   │   ├── repository.ts    # Encapsulated database interactions
-    │   │   │   ├── router.ts        # Http routes specific to auth
-    │   │   │   └── schema.ts        # Necessary schemas and type definitions
-    │   │   └── routes.ts            # Route registration point
-    │   ├── config/                  # Configuration
-    │   │   ├── environment.ts       # Environment Configuration
-    │   │   └── schema.ts            # Common Response Format Schema
-    │   ├── database/
-    │   │   ├── migrations/          # Migrations files for knex
-    │   │   ├── seeds/               # Seeder files for knex
-    │   │   └── knexfile.ts          # Knexfile for dev purposes
-    │   ├── plugins/
-    │   │   └──  *.ts                # Custom fastify plugins & types
-    │   └── server.ts                # Server entrypoint
-    ├── .gitignore                   # Gitignore file
-    ├── Makefile                     # Runnable Scripts
-    ├── biome.json                   # Biome configs
-    ├── docker-compose.yml           
-    ├── Dockerfile                   
-    ├── LICENSE                   
-    ├── package.json                 
-    ├── tsconfig.json
-    └──├── yarn.lock
+## Structure
+
+```text
+src/
+  app/
+    auth/
+    base/
+    gallery/
+  config/
+    environment.ts
+    schema.ts
+  database/
+    db.d.ts
+    helpers.ts
+    migrate.ts
+    migrations/
+  plugins/
+    bcrypt.ts
+    cache.ts
+    db.ts
+    jwt.ts
+    nodemailer.ts
+    pgboss.ts
+    s3object.ts
+    schemas.ts
+  queue/
+    base/
+    templates/
+    workers/
+    config.ts
+    index.ts
+  routes.ts
+  server.ts
 ```
 
-## Architechture
-This follows a N-Tier Architechture
+## Template Conventions
 
-- schemas => schema and static types
-- handlers => request sanitization, validation & respond
-- services => application and business logic
-- repository => database access layer
+- Path aliases use `#app/*`, `#plugins/*`, `#database/*`, `#config/*`, and `#queue/*`.
+- Schemas are auto-registered from `src/config/schema.ts` and any `schema.ts` / `*.schema.ts` files under `src/app`.
+- TLS and JWT material are loaded from base64 environment variables instead of file reads at runtime.
+- Queueing uses PostgreSQL via `pg-boss`, so Redis is no longer part of the starter.
 
-## Get Started - Development
+## Development
 
-### Environment
+Prerequisites:
 
-Ensure following tools available in your machine
+- Node.js 24+
+- Yarn 4+
+- Docker / Docker Compose
+- OpenSSL
+- `mkcert` optional, but preferred for trusted local TLS
 
--   Docker >= v27
--   Docker Compose >=v2.29
--   OpenSSL >= 1.1.1
--   Node.js >= V22
--   Yarn
-
-### Server
-
-To run the development server use below command:
+First-time setup:
 
 ```sh
 make init
 ```
 
-This command will
+That will:
 
--   Copy `.env.example` to `.env`, filling in default values
--   Generate TLS cert for serving https locally.
--   Generate ECDSA public-private key pair for JWT Auth locally.
--   Start development server in hot reload mode
+- copy `.env.example` to `.env` if needed
+- generate local TLS certs
+- generate JWT keys and write them into `.env`
+- install dependencies and lefthook
+- build and start the Docker services
 
-After running above command for the first time, you should only start development server in hot reload mode using below command
+Normal local startup after that:
 
 ```sh
 make dev
 ```
 
-n.b. In production environment, mount your certificates in `cert` directory, ensure proper name & path supplied in env.
-
-### Exploring APIs
-
-[Bruno](https://github.com/usebruno/bruno) is an Opensource IDE For Exploring and Testing Api's, lightweight alternative to postman/insomnia. Open Directory `docs/bruno` from the bruno app & the collection will show up. Choose the environment `Local`.
-
-Download & install bruno -> [click here](https://www.usebruno.com/downloads).
-
-### Other Commands
-
-run the development server with hot reload
+Direct app commands:
 
 ```sh
 yarn dev
+yarn build
+yarn check
+yarn format
 ```
 
-run migration of postgresql database, ensure `.env` values are correctly given
+## Database
+
+The starter ships with Kysely migrations and a generated DB typing file placeholder.
+
+Useful commands:
 
 ```sh
-yarn migrate-up
+make db-migrate
+make db-migrate-up
+make db-migrate-down
+make db-status
+make db-types
+make db-shell
 ```
 
-create migration files
+## Services
 
-```sh
-yarn migrate-create <filename>
-```
+`docker-compose.yml` starts:
 
-Generate TLS cert for serving https locally.
+- `app` on port `3000`
+- PostgreSQL on port `5432`
+- Mailpit SMTP on `1025`
+- Mailpit UI on `8025`
 
-```sh
-make tls
-```
+## API Docs
 
-Generate ECDSA public-private key pair for JWT Auth locally.
+In development, Scalar UI is mounted at `/openapi` and protected with basic auth from:
 
-```sh
-make jwt
-```
+- `OPENAPI_USER`
+- `OPENAPI_PASS`
 
-Run linter
-
-```sh
-make lint
-```
+The raw OpenAPI document is available through Fastify Swagger registration.
