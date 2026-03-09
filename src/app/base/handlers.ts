@@ -1,101 +1,70 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
+import { JOB_NAMES } from "#queue/workers/index.js"
 import type { QueueBody } from "./types.js"
 
 class BaseHandler {
-    private fastify: FastifyInstance
+    constructor(private readonly fastify: FastifyInstance) {}
 
-    constructor(fastify: FastifyInstance) {
-        this.fastify = fastify
-    }
-
-    /**
-     * GET /base - Returns API welcome info along with memory usage.
-     */
-    public base = async (request: FastifyRequest, reply: FastifyReply) => {
-        const status = this.fastify.memoryUsage()
-
+    public base = async (_request: FastifyRequest, reply: FastifyReply) => {
         reply.code(200)
         return {
             label: "Welcome to API",
             uptime: process.uptime(),
             version: process.version,
-            status,
+            status: this.fastify.memoryUsage(),
         }
     }
 
-    /**
-     * GET /otp-keys - Retrieves OTP keys from the cache.
-     */
-    public otpKeys = async (request: FastifyRequest, reply: FastifyReply) => {
-        const data = await this.fastify.cache.get_pattern("otp*")
+    public otpKeys = async (_request: FastifyRequest, reply: FastifyReply) => {
+        const data = await this.fastify.cache.get_pattern("otp:*")
 
         reply.code(200)
         return {
             error: false,
-            message: data.length ? "All OTP in circulation" : "No OTP in ciruclation",
+            message: data.length ? "All OTP keys in circulation" : "No OTP keys in circulation",
             data,
         }
     }
 
-    /**
-     * POST /redis-data - Retrieves Redis data for a given key.
-     */
-    public redisData = async (request: FastifyRequest, reply: FastifyReply) => {
+    public cacheData = async (request: FastifyRequest, reply: FastifyReply) => {
         const key = (request.body as { key: string }).key
         const data = await this.fastify.cache.get(key)
 
         reply.code(200)
         return {
             error: false,
-            message: `Data for Redis ${key}`,
+            message: `Data for cache key ${key}`,
             data,
         }
     }
 
-    /**
-     * POST /flush-redis - Flushes all Redis keys matching a pattern.
-     */
-    public flushRedis = async (request: FastifyRequest, reply: FastifyReply) => {
-        await this.fastify.cache.flush_pattern("*")
+    public flushCache = async (_request: FastifyRequest, reply: FastifyReply) => {
+        await this.fastify.cache.flushPattern("*")
 
         reply.code(200)
         return {
             error: false,
-            message: "Redis globally flushed",
+            message: "Cache globally flushed",
         }
     }
 
-    /**
-     * POST /queue-action - Performs an action on BullMQ queue.
-     */
     public queueAction = async (request: FastifyRequest<{ Body: QueueBody }>, reply: FastifyReply) => {
-        const action = request.body?.action
-
-        if (this.fastify.queue) {
-            switch (action) {
-                case "drain":
-                    await this.fastify.queue.drain()
-
-                    break
-
-                case "clean":
-                    if (this.fastify.queue) {
-                        await this.fastify.queue.clean(60000, 1000, "paused")
-                    }
-                    break
-
-                case "obliterate":
-                    if (this.fastify.queue) {
-                        await this.fastify.queue.obliterate()
-                    }
-                    break
-            }
+        switch (request.body.action) {
+            case "drain":
+                await this.fastify.queue.deleteQueuedJobs(JOB_NAMES.SEND_OTP_EMAIL)
+                break
+            case "clean":
+                await this.fastify.queue.deleteStoredJobs(JOB_NAMES.SEND_OTP_EMAIL)
+                break
+            case "obliterate":
+                await this.fastify.queue.deleteAllJobs(JOB_NAMES.SEND_OTP_EMAIL)
+                break
         }
 
         reply.code(200)
         return {
             error: false,
-            message: `BullMQ Action - ${action} performed successfully`,
+            message: `Queue action ${request.body.action} performed successfully`,
         }
     }
 }

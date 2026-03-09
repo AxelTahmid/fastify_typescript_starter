@@ -1,8 +1,8 @@
-import type { FastifyInstance, FastifyPluginAsync, FastifyPluginOptions } from "fastify"
+import type { FastifyInstance, FastifyPluginAsync } from "fastify"
 import BaseHandler from "./handlers.js"
 import { RouteSchema } from "./schema.js"
 
-const routes: FastifyPluginAsync = async (app: FastifyInstance, opts: FastifyPluginOptions) => {
+const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
     const baseHandler = new BaseHandler(app)
 
     app.route({
@@ -22,9 +22,10 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance, opts: FastifyPlu
 
     app.route({
         method: "POST",
-        url: "/redis",
+        url: "/cache",
         onRequest: app.role.restricted,
-        handler: baseHandler.redisData,
+        schema: RouteSchema.cacheData,
+        handler: baseHandler.cacheData,
     })
 
     app.route({
@@ -39,7 +40,8 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance, opts: FastifyPlu
         method: "POST",
         url: "/flush",
         onRequest: app.role.restricted,
-        handler: baseHandler.flushRedis,
+        schema: RouteSchema.flushCache,
+        handler: baseHandler.flushCache,
     })
 }
 

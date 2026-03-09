@@ -1,123 +1,106 @@
-/**
- * * https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/s3-example-creating-buckets.html
- * * https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/javascriptv3/example_code/s3/README.md
- */
-import { DeleteObjectCommand, DeleteObjectsCommand, ListObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
-import conf from "../../config/environment.js"
-import type { DestroyMany, Gallery, KeyQueryString } from "./types.js"
+import conf from "#config/environment.js"
+import type { DestroyMany, KeyQueryString } from "./types.js"
 
 class GalleryHandler {
-    private fastify: FastifyInstance
+    constructor(private readonly fastify: FastifyInstance) {}
 
-    constructor(fastify: FastifyInstance) {
-        this.fastify = fastify
-    }
-
-    /**
-     * GET /v1/gallery/flush
-     */
-    public flush = async (req: FastifyRequest, reply: FastifyReply) => {
+    public flush = async (_req: FastifyRequest, reply: FastifyReply) => {
         await this.fastify.cache.flush("gallery:list")
 
         reply.code(200)
         return {
             error: false,
-            message: "Media Cache Removed",
+            message: "Media cache removed",
         }
     }
 
-    /**
-     * GET /v1/gallery/
-     */
-    public gallery = async (req: FastifyRequest, reply: FastifyReply) => {
+    public gallery = async (_req: FastifyRequest, reply: FastifyReply) => {
         const key = "gallery:list"
-
-        let data = await this.fastify.cache.get(key)
+        let data = await this.fastify.cache.get<any>(key)
 
         if (!data) {
-            data = await this.fastify.s3.send(new ListObjectsCommand({ Bucket: conf.storage.bucket }))
+            const contents: Array<{ Key?: string; LastModified?: string; Size?: number; Url?: string }> = []
 
-            data.Contents.forEach((c: Gallery) => {
-                c.Url = `${conf.storage.connection.endpoint}/${conf.storage.bucket}/${c.Key}`
-            })
+            const stream = this.fastify.s3.listObjectsV2(conf.storage.bucket || "", "", true)
+            data = await new Promise<{ Contents: Array<{ Key?: string; LastModified?: string; Size?: number; Url?: string }> }>(
+                (resolve, reject) => {
+                    stream.on("data", (object) => {
+                        contents.push({
+                            Key: object.name,
+                            LastModified: object.lastModified?.toISOString(),
+                            Size: object.size,
+                            Url: `${conf.storage.publicBaseUrl}/${conf.storage.bucket}/${object.name}`,
+                        })
+                    })
+                    stream.on("end", () => resolve({ Contents: contents }))
+                    stream.on("error", reject)
+                },
+            )
             await this.fastify.cache.set(key, data)
         }
 
         reply.code(200)
         return {
             error: false,
-            message: "Media List Fetched!",
+            message: "Media list fetched",
             data,
         }
     }
 
-    /**
-     * POST /v1/gallery/upload
-     * Uploads (or updates) a media file on S3.
-     */
     public upload = async (req: FastifyRequest<{ Querystring: KeyQueryString }>, reply: FastifyReply) => {
-        const { Key } = req.query
         const data = await req.file()
         const buffer = await data?.toBuffer()
-
         const allowedMimes = ["image/png", "image/jpg", "image/jpeg", "image/webp", "image/svg+xml"]
 
-        if (!allowedMimes.includes(data?.mimetype || "")) {
-            throw this.fastify.httpErrors.notAcceptable(`Type: ${data?.mimetype} not allowed!`)
+        if (!data || !buffer) {
+            throw this.fastify.httpErrors.badRequest("File upload is required")
+        }
+        if (!allowedMimes.includes(data.mimetype)) {
+            throw this.fastify.httpErrors.notAcceptable(`Type: ${data.mimetype} not allowed!`)
         }
 
-        const uploadParams = {
-            Bucket: conf.storage.bucket,
-            Key,
-            CacheControl: "public,max-age=2628000,s-maxage=2628000",
-            Body: buffer,
-        }
-
-        await this.fastify.s3.send(new PutObjectCommand(uploadParams))
-        await this.fastify.cache.flush("gallery:list")
-
-        reply.code(201)
-        return {
-            error: false,
-            message: "Media Created",
-        }
-    }
-
-    /**
-     * DELETE /v1/gallery/:key
-     * Deletes a single media file from S3.
-     */
-    public destroy = async (req: FastifyRequest<{ Querystring: KeyQueryString }>, reply: FastifyReply) => {
-        const { Key } = req.query
-
-        await this.fastify.s3.send(new DeleteObjectCommand({ Bucket: conf.storage.bucket, Key }))
-        await this.fastify.cache.flush("gallery:list")
-
-        reply.code(201)
-        return {
-            error: false,
-            message: `Media: ${Key} deleted.`,
-        }
-    }
-
-    /**
-     * DELETE /v1/gallery/:key
-     * Deletes multiple media files from S3.
-     */
-    public destroyMany = async (req: FastifyRequest<{ Body: DestroyMany }>, reply: FastifyReply) => {
-        await this.fastify.s3.send(
-            new DeleteObjectsCommand({
-                Bucket: conf.storage.bucket,
-                Delete: req.body,
-            }),
+        await this.fastify.s3.putObject(
+            conf.storage.bucket || "",
+            req.query.Key,
+            buffer,
+            buffer.length,
+            {
+                "Content-Type": data.mimetype,
+                "Cache-Control": "public,max-age=2628000,s-maxage=2628000",
+            },
         )
         await this.fastify.cache.flush("gallery:list")
 
         reply.code(201)
         return {
             error: false,
-            message: "Selected Files deleted",
+            message: "Media created",
+        }
+    }
+
+    public destroy = async (req: FastifyRequest<{ Querystring: KeyQueryString }>, reply: FastifyReply) => {
+        await this.fastify.s3.removeObject(conf.storage.bucket || "", req.query.Key)
+        await this.fastify.cache.flush("gallery:list")
+
+        reply.code(201)
+        return {
+            error: false,
+            message: `Media: ${req.query.Key} deleted.`,
+        }
+    }
+
+    public destroyMany = async (req: FastifyRequest<{ Body: DestroyMany }>, reply: FastifyReply) => {
+        await this.fastify.s3.removeObjects(
+            conf.storage.bucket || "",
+            (req.body.Objects || []).map((item) => item.Key),
+        )
+        await this.fastify.cache.flush("gallery:list")
+
+        reply.code(201)
+        return {
+            error: false,
+            message: "Selected files deleted",
         }
     }
 }

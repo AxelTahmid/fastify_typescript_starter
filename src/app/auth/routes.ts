@@ -1,14 +1,14 @@
-import type { FastifyInstance, FastifyPluginAsync, FastifyPluginOptions } from "fastify"
-import bcrypt from "../../plugins/bcrypt.js"
+import type { FastifyInstance, FastifyPluginAsync } from "fastify"
+import bcrypt from "#plugins/bcrypt.js"
 import AuthHandler from "./handler.js"
 import AuthRepository from "./repository.js"
 import { RouteSchema } from "./schema.js"
 import AuthService from "./service.js"
 
-const routes: FastifyPluginAsync = async (app: FastifyInstance, opts: FastifyPluginOptions) => {
-    app.register(bcrypt, { saltWorkFactor: 10 })
+const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
+    await app.register(bcrypt, { saltWorkFactor: 10 })
 
-    const repo = new AuthRepository(app.knex)
+    const repo = new AuthRepository(app.db)
     const svc = new AuthService(app, repo)
     const authHandler = new AuthHandler(app, svc, repo)
 

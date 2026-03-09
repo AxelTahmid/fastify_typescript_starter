@@ -1,21 +1,14 @@
-import conf from "@config/environment.js"
+import conf from "#config/environment.js"
 import fastifyMultipart from "@fastify/multipart"
-import type { FastifyInstance, FastifyPluginAsync, FastifyPluginOptions } from "fastify"
+import type { FastifyInstance, FastifyPluginAsync } from "fastify"
 
-import s3object from "@plugins/s3object.js"
+import s3object from "#plugins/s3object.js"
 import GalleryHandler from "./handlers.js"
 import { RouteSchema } from "./schema.js"
 
-const routes: FastifyPluginAsync = async (app: FastifyInstance, opts: FastifyPluginOptions) => {
-    app.register(fastifyMultipart, conf.storage.multer)
-
-    const s3credentials = {
-        ...conf.storage.connection,
-        // requestHandler: app.request,
-        // logger: app.log,
-    }
-
-    app.register(s3object, s3credentials)
+const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
+    await app.register(fastifyMultipart, { limits: conf.storage.multer })
+    await app.register(s3object, conf.storage.connection)
 
     const galleryHandler = new GalleryHandler(app)
 

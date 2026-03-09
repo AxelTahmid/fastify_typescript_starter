@@ -1,82 +1,77 @@
-import { Type } from "@sinclair/typebox"
+import { Type } from "typebox"
 import type { FastifySchema } from "fastify"
-import { replyObj } from "../../config/schema.js"
 
-/* ---------------------------------------------
-    Reusable Definitions
---------------------------------------------- */
 export namespace Data {
-    export const galleryContentObj = Type.Object({
-        Key: Type.Optional(Type.String()),
-        LastModified: Type.Optional(Type.String({ format: "date" })),
-        ETag: Type.Optional(Type.String()),
-        Size: Type.Optional(Type.Number()),
-        Url: Type.Optional(Type.String()),
-    })
+    export const galleryContentObj = Type.Object(
+        {
+            Key: Type.Optional(Type.String()),
+            LastModified: Type.Optional(Type.String()),
+            Size: Type.Optional(Type.Number()),
+            Url: Type.Optional(Type.String()),
+        },
+        { $id: "GalleryContent" },
+    )
 
-    export const galleryResponseObj = Type.Object({
-        Prefix: Type.Optional(Type.String()),
-        Name: Type.Optional(Type.String()),
-        IsTruncated: Type.Optional(Type.Boolean()),
-        Contents: Type.Optional(Type.Array(galleryContentObj)),
-    })
+    export const galleryResponseObj = Type.Object(
+        {
+            Contents: Type.Optional(Type.Array(Data.galleryContentObj)),
+        },
+        { $id: "GalleryListResponse" },
+    )
 
-    export const keyQueryParam = Type.Object({ Key: Type.String() })
+    export const keyQueryParam = Type.Object({ Key: Type.String() }, { $id: "GalleryKeyQuery" })
 
-    export const destroyManyBody = Type.Object({
-        Objects: Type.Optional(Type.Array(Type.Object({ Key: Type.String() }))),
-    })
+    export const destroyManyBody = Type.Object(
+        {
+            Objects: Type.Optional(Type.Array(Type.Object({ Key: Type.String() }))),
+        },
+        { $id: "GalleryDestroyMany" },
+    )
 }
 
-/* ---------------------------------------------
-    Fastify Route Schemas for Gallery
---------------------------------------------- */
+export const models = [Data.galleryContentObj, Data.galleryResponseObj, Data.keyQueryParam, Data.destroyManyBody]
+
+const replySchema = (data?: object) => ({
+    type: "object",
+    properties: {
+        error: { type: "boolean" },
+        message: { type: "string" },
+        ...(data ? { data } : {}),
+    },
+    required: ["error", "message"],
+})
+
 export namespace RouteSchema {
-    /**
-     * GET /v1/gallery/
-     */
     export const gallery: FastifySchema = {
-        description: "List gallery images",
+        description: "List gallery objects",
         tags: ["gallery"],
-        response: { 200: replyObj(Data.galleryResponseObj) },
+        response: { 200: replySchema({ $ref: "GalleryListResponse#" }) },
     }
 
-    /**
-     * POST /v1/gallery/upload
-     */
     export const upload: FastifySchema = {
-        description: "Upload a gallery image",
+        description: "Upload a gallery object",
         tags: ["gallery"],
         querystring: Data.keyQueryParam,
-        response: { 201: replyObj(null) },
+        response: { 201: replySchema() },
     }
 
-    /**
-     * DELETE /v1/gallery/?Key=keyname
-     */
     export const destroy: FastifySchema = {
-        description: "Delete a gallery image",
+        description: "Delete a gallery object",
         tags: ["gallery"],
         querystring: Data.keyQueryParam,
-        response: { 201: replyObj(null) },
+        response: { 201: replySchema() },
     }
 
-    /**
-     * DELETE /v1/gallery/selected
-     */
     export const destroyMany: FastifySchema = {
-        description: "Delete multiple gallery image",
+        description: "Delete multiple gallery objects",
         tags: ["gallery"],
         body: Data.destroyManyBody,
-        response: { 201: replyObj(null) },
+        response: { 201: replySchema() },
     }
 
-    /**
-     * GET /v1/gallery/flush
-     */
     export const flush: FastifySchema = {
-        description: "Flush redis cache of images",
+        description: "Flush gallery cache",
         tags: ["gallery"],
-        response: { 200: replyObj(null) },
+        response: { 200: replySchema() },
     }
 }

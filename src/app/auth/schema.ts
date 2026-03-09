@@ -1,117 +1,121 @@
-import { Type } from "@sinclair/typebox"
+import { Type } from "typebox"
 import type { FastifySchema } from "fastify"
-import { replyObj } from "../../config/schema.js"
-
-/* ---------------------------------------------
-    Reusable Definitions
---------------------------------------------- */
-const Email = Type.String({ minLength: 6, maxLength: 100, format: "email" })
-const CaptchaToken = Type.String({ minLength: 1 })
-const Role = Type.Union([Type.Literal("customer"), Type.Literal("admin"), Type.Literal("manager")])
 
 export namespace Data {
-    /* ---------------------------------------------
-        Data Schemas
-    --------------------------------------------- */
-    export const userBody = Type.Object({
-        id: Type.Number(),
-        email: Email, // original user email schema (less strict)
-        email_verified: Type.Boolean(),
-        role: Role,
-        created_at: Type.String({ format: "date" }),
-        updated_at: Type.String({ format: "date" }),
-    })
-    /* ---------------------------------------------
-        Request Body Schemas
-    --------------------------------------------- */
-    export const userLoginBody = Type.Object({
-        email: Email,
-        password: Type.String(),
-        captchaToken: CaptchaToken,
-    })
+    export const userBody = Type.Object(
+        {
+            id: Type.Number(),
+            email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
+            email_verified: Type.Boolean(),
+            role: Type.Union([Type.Literal("customer"), Type.Literal("admin"), Type.Literal("manager")]),
+            is_banned: Type.Boolean(),
+            created_at: Type.String(),
+            updated_at: Type.String(),
+        },
+        { $id: "AuthUser" },
+    )
 
-    export const resetPasswordBody = Type.Object({
-        email: Email,
-        password: Type.String(),
-        code: Type.String({ minLength: 5, maxLength: 6 }),
-        captchaToken: CaptchaToken,
-    })
+    export const userLoginBody = Type.Object(
+        {
+            email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
+            password: Type.String(),
+            captchaToken: Type.String({ minLength: 1 }),
+        },
+        { $id: "AuthUserLogin" },
+    )
 
-    export const verifyEmailBody = Type.Object({
-        code: Type.String({ minLength: 5, maxLength: 6 }),
-        captchaToken: CaptchaToken,
-    })
+    export const resetPasswordBody = Type.Object(
+        {
+            email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
+            password: Type.String(),
+            code: Type.String({ minLength: 5, maxLength: 6 }),
+            captchaToken: Type.String({ minLength: 1 }),
+        },
+        { $id: "AuthResetPassword" },
+    )
 
-    export const reqOTPBody = Type.Object({
-        email: Email,
-        captchaToken: CaptchaToken,
-    })
+    export const verifyEmailBody = Type.Object(
+        {
+            code: Type.String({ minLength: 5, maxLength: 6 }),
+            captchaToken: Type.String({ minLength: 1 }),
+        },
+        { $id: "AuthVerifyEmail" },
+    )
 
-    export const tokenBody = Type.Object({
-        token: Type.String(),
-    })
+    export const reqOTPBody = Type.Object(
+        {
+            email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
+            captchaToken: Type.String({ minLength: 1 }),
+        },
+        { $id: "AuthOtpRequest" },
+    )
+
+    export const tokenBody = Type.Object(
+        {
+            token: Type.String(),
+        },
+        { $id: "AuthToken" },
+    )
 }
 
-/* ---------------------------------------------
-    Fastify Route Schemas
---------------------------------------------- */
+export const models = [
+    Data.userBody,
+    Data.userLoginBody,
+    Data.resetPasswordBody,
+    Data.verifyEmailBody,
+    Data.reqOTPBody,
+    Data.tokenBody,
+]
+
+const replySchema = (data?: object) => ({
+    type: "object",
+    properties: {
+        error: { type: "boolean" },
+        message: { type: "string" },
+        ...(data ? { data } : {}),
+    },
+    required: ["error", "message"],
+})
+
 export namespace RouteSchema {
-    /**
-     * * POST /v1/auth/login
-     */
     export const login: FastifySchema = {
         description: "Login existing user",
         tags: ["auth"],
         body: Data.userLoginBody,
-        response: { 200: replyObj(null) },
+        response: { 200: replySchema({ $ref: "AuthToken#" }) },
     }
 
-    /**
-     * * POST /v1/auth/register
-     */
     export const register: FastifySchema = {
         description: "Register new user",
         tags: ["auth"],
         body: Data.userLoginBody,
-        response: { 201: replyObj(null) },
+        response: { 201: replySchema({ $ref: "AuthToken#" }) },
     }
 
-    /**
-     * * GET /v1/auth/me
-     */
     export const me: FastifySchema = {
         description: "Fetch user information",
         tags: ["auth"],
-        response: { 200: replyObj(Data.userBody) },
+        response: { 200: replySchema({ $ref: "AuthUser#" }) },
     }
 
-    /**
-     * * POST /v1/auth/otp-code
-     */
     export const requestOTP: FastifySchema = {
-        description: "Request One Time Password (OTP) for user",
+        description: "Request OTP for user",
         tags: ["auth"],
         body: Data.reqOTPBody,
-        response: { 200: replyObj(null) },
+        response: { 200: replySchema() },
     }
 
-    /**
-     * * POST /v1/auth/verify-email
-     */
     export const verifyEmail: FastifySchema = {
         description: "Verify user email",
         tags: ["auth"],
         body: Data.verifyEmailBody,
-        response: { 201: replyObj(Data.tokenBody) },
+        response: { 201: replySchema({ $ref: "AuthToken#" }) },
     }
 
-    /**
-     * * POST /v1/auth/reset-password
-     */
     export const resetPassword: FastifySchema = {
         description: "Reset user password",
         tags: ["auth"],
         body: Data.resetPasswordBody,
-        response: { 201: replyObj(Data.tokenBody) },
+        response: { 201: replySchema() },
     }
 }

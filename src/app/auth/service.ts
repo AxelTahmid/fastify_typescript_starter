@@ -1,25 +1,22 @@
 import type { FastifyInstance } from "fastify"
 import { ofetch } from "ofetch"
 
-import conf from "../../config/environment.js"
+import conf from "#config/environment.js"
 import type AuthRepository from "./repository.js"
 import type { ResetPassword, User, UserLogin } from "./types.js"
 
 class AuthService {
-    private app: FastifyInstance
-    private repo: AuthRepository
-
-    constructor(app: FastifyInstance, repo: AuthRepository) {
-        this.app = app
-        this.repo = repo
-    }
+    constructor(
+        private readonly app: FastifyInstance,
+        private readonly repo: AuthRepository,
+    ) {}
 
     public async verifyCaptcha(token: string) {
         if (conf.isDevEnvironment) {
             return true
         }
 
-        if (!conf.captcha?.secret) {
+        if (!conf.captcha.secret) {
             throw this.app.httpErrors.badRequest("Captcha failed, config not set!")
         }
 
@@ -33,17 +30,19 @@ class AuthService {
         })
 
         if (!data.success) {
-            throw this.app.httpErrors.badRequest(`Captcha Failed: ${data["error-codes"][0]}`)
+            throw this.app.httpErrors.badRequest(`Captcha failed: ${data["error-codes"]?.[0] || "unknown"}`)
         }
+
         return true
     }
 
     public async authenticate(params: UserLogin) {
-        const { email, password } = params || {}
+        const { email, password } = params
         const key = `timeout:${email}`
-        let attempt = await this.app.cache.get(key)
+        let attempt = (await this.app.cache.get<number>(key)) || 0
+
         if (attempt >= 5) {
-            throw this.app.httpErrors.forbidden("5 Wrong Attempts! Try again in 5 minutes.")
+            throw this.app.httpErrors.forbidden("5 wrong attempts. Try again in 5 minutes.")
         }
 
         const user = await this.repo.getUserByEmail(email)
@@ -51,36 +50,35 @@ class AuthService {
 
         const match = await this.app.bcrypt.compare(password, user.password)
         if (!match) {
-            attempt = (attempt || 0) + 1
-            await this.app.redis.setex(key, 300, attempt.toString())
-            throw this.app.httpErrors.forbidden("Password Incorrect!")
+            attempt += 1
+            await this.app.cache.set(key, attempt, 300)
+            throw this.app.httpErrors.forbidden("Password incorrect!")
         }
-        return await this.app.auth.token(user)
+
+        await this.app.cache.flush(key)
+        return this.app.auth.token(user)
     }
 
     public async registration(params: UserLogin) {
-        const { email, password } = params || {}
+        const { email, password } = params
         const hashedPassword = await this.app.bcrypt.hash(password)
         const userId = await this.repo.createUser({ email, password: hashedPassword })
-        const user = {
+        return this.app.auth.token({
             id: userId,
             email,
             email_verified: false,
-        }
-        return await this.app.auth.token(user as User)
+            role: "customer",
+            is_banned: false,
+        } as User)
     }
 
     public async verifyUserEmail(email: string) {
         const updatedUser = await this.repo.updateUserEmailVerified(email)
-        return await this.app.auth.token({
-            ...updatedUser,
-            email_verified: true,
-            role: "customer",
-        } as User)
+        return this.app.auth.token(updatedUser as User)
     }
 
     public async updateUserPassword(params: ResetPassword) {
-        const { email, password } = params || {}
+        const { email, password } = params
         const hashedPassword = await this.app.bcrypt.hash(password)
         await this.repo.updateUserPassword({ email, password: hashedPassword })
     }
@@ -89,21 +87,17 @@ class AuthService {
         const user = await this.repo.getUserByEmail(email)
         if (!user) throw this.app.httpErrors.notFound("User not found!")
 
-        const otp_code = Math.random().toString().substring(2, 8)
-        await this.app.redis.setex(`otp:${email}`, 1800, otp_code)
-        this.app.log.info({ otp_code }, "otp here: ")
-        this.app.queue?.add(`otp-${email}`, {
-            action: "otp",
-            payload: { email, otp_code },
-        })
+        const otp_code = Math.random().toString().slice(2, 8)
+        await this.app.cache.set(`otp:${email}`, otp_code, 1800)
+        await this.app.queue.sendOtpEmail(email, otp_code)
         return otp_code
     }
 
     public async verifyOTP(params: { code: string; email: string }) {
         const key = `otp:${params.email}`
-        const otp = await this.app.redis.get(key)
+        const otp = await this.app.cache.get<string>(key)
         if (otp && otp === params.code) {
-            await this.app.redis.del(key)
+            await this.app.cache.flush(key)
             return true
         }
         return false
