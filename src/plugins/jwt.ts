@@ -1,75 +1,22 @@
 import fastifyJwt from "@fastify/jwt"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import fp from "fastify-plugin"
+import config from "#config/environment.js"
 
-import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+type UserRole = "admin" | "manager" | "customer"
 
-type User = {
+type JwtUser = {
     id: number
     email: string
     email_verified: boolean
-    role: string
+    role: UserRole
     is_banned?: boolean
-}
-
-enum Roles {
-    ADMIN = "admin",
-    MANAGER = "manager",
-    CUSTOMER = "customer",
-}
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-/**
- * * All JWT features including roles
- */
-async function fastJWT(app: FastifyInstance) {
-    /**
-     * * prime256v1, in short P-256 ECDSA keys for JWT
-     */
-    app.register(fastifyJwt, {
-        secret: {
-            private: readFileSync(join(__dirname, "..", "..", "certs", "private.pem")),
-            public: readFileSync(join(__dirname, "..", "..", "certs", "public.pem")),
-        },
-        sign: { algorithm: "ES256" },
-    })
-
-    /**
-     * * generate token for authorization
-     */
-    const token = async (user: User) =>
-        app.jwt.sign(
-            {
-                id: user.id,
-                email: user.email,
-                email_verified: Boolean(user.email_verified),
-                role: user.role,
-            },
-            { expiresIn: "1d" },
-        )
-
-    app.decorate("authenticate", authenticated)
-
-    app.decorate("auth", {
-        token,
-        verified,
-    })
-
-    app.decorate("role", {
-        admin,
-        manager,
-        restricted,
-    })
 }
 
 declare module "@fastify/jwt" {
     interface FastifyJWT {
-        payload: User
-        user: User
+        payload: JwtUser
+        user: JwtUser
     }
 }
 
@@ -77,7 +24,7 @@ declare module "fastify" {
     interface FastifyInstance {
         authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
         auth: {
-            token: (user: User) => Promise<string>
+            token: (user: JwtUser) => Promise<string>
             verified: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
         }
         role: {
@@ -88,60 +35,97 @@ declare module "fastify" {
     }
 }
 
-/**
- * * email verified middleware.
- * * for ordering and profile operations
- */
+const forbidden = (reply: FastifyReply, message: string): never => {
+    reply.code(403)
+    throw new Error(message)
+}
+
+const unauthorized = (reply: FastifyReply, message: string): never => {
+    reply.code(401)
+    throw new Error(message)
+}
+
+const parseJwtKeys = () => ({
+    privateKey: Buffer.from(config.auth.privateKeyBase64, "base64").toString("utf-8"),
+    publicKey: Buffer.from(config.auth.publicKeyBase64, "base64").toString("utf-8"),
+})
+
 const verified = async (req: FastifyRequest, reply: FastifyReply) => {
     await req.jwtVerify()
     if (req.user.email_verified === false) {
-        reply.code(403)
-        throw Error(`User: ${req.user.email} is not verified`)
+        forbidden(reply, `User: ${req.user.email} is not verified`)
     }
 }
-/**
- * * check if logged in
- */
+
 const authenticated = async (req: FastifyRequest, reply: FastifyReply) => {
     await req.jwtVerify()
     if (req.user.is_banned) {
-        reply.code(403)
-        throw Error(`${req.user.email} is banned.`)
+        forbidden(reply, `${req.user.email} is banned.`)
     }
 }
-/**
- * *  admin role check
- */
+
 const admin = async (req: FastifyRequest, reply: FastifyReply) => {
     await req.jwtVerify()
-    if (req.user.role !== Roles.ADMIN) {
-        reply.code(401)
-        throw Error(`${req.user.email} does not have permission`)
+    if (req.user.role !== "admin") {
+        unauthorized(reply, `${req.user.email} does not have permission`)
     }
 }
-/**
- * * manager role check
- */
+
 const manager = async (req: FastifyRequest, reply: FastifyReply) => {
     await req.jwtVerify()
-    if (req.user.role !== Roles.MANAGER) {
-        reply.code(401)
-        throw Error(`${req.user.email} does not have permission`)
+    if (req.user.role !== "manager") {
+        unauthorized(reply, `${req.user.email} does not have permission`)
     }
 }
-/**
- * * Blocks Customer
- * * Allows User with admin or manager role
- */
+
 const restricted = async (req: FastifyRequest, reply: FastifyReply) => {
     await req.jwtVerify()
-    if (req.user.role === Roles.ADMIN || req.user.role === Roles.MANAGER) {
-        reply.code(401)
-        throw Error(`${req.user.email} does not have permission`)
+    if (!["admin", "manager"].includes(req.user.role)) {
+        forbidden(reply, `${req.user.email} does not have permission`)
     }
+}
+
+async function fastJWT(app: FastifyInstance) {
+    if (!config.auth.privateKeyBase64 || !config.auth.publicKeyBase64) {
+        app.log.error("JWT keys are not set in environment variables.")
+        process.exit(1)
+    }
+
+    const { privateKey, publicKey } = parseJwtKeys()
+
+    app.register(fastifyJwt, {
+        secret: {
+            private: privateKey,
+            public: publicKey,
+        },
+        sign: { algorithm: "ES256" },
+    })
+
+    const token = async (user: JwtUser) =>
+        app.jwt.sign(
+            {
+                id: user.id,
+                email: user.email,
+                email_verified: Boolean(user.email_verified),
+                role: user.role,
+                is_banned: Boolean(user.is_banned),
+            },
+            { expiresIn: config.auth.accessTokenExpiresInSeconds },
+        )
+
+    app.decorate("authenticate", authenticated)
+    app.decorate("auth", {
+        token,
+        verified,
+    })
+    app.decorate("role", {
+        admin,
+        manager,
+        restricted,
+    })
 }
 
 export default fp(fastJWT, {
     fastify: ">=5.0.0",
-    name: "fast-jwt",
+    name: "jwt",
 })

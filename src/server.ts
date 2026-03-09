@@ -1,38 +1,29 @@
 import "dotenv/config"
-import { readFileSync } from "node:fs"
-import type { Http2SecureServer } from "node:http2"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox"
 import closeWithGrace from "close-with-grace"
-import fastify, { type FastifyInstance } from "fastify"
+import fastify from "fastify"
 
-import conf from "@config/environment.js"
-import knexfile from "@database/knexfile.js"
-import bullMQ from "@plugins/bullMQ.js"
-import jwt from "@plugins/jwt.js"
-import knex from "@plugins/knex.js"
-import redis from "@plugins/redis.js"
-import routes from "routes.js"
+import conf from "#config/environment.js"
+import cache from "#plugins/cache.js"
+import db from "#plugins/db.js"
+import jwt from "#plugins/jwt.js"
+import nodemailer from "#plugins/nodemailer.js"
+import pgboss from "#plugins/pgboss.js"
+import schemas from "#plugins/schemas.js"
+import routes from "./routes.js"
 
-// Global error handlers for additional safety
 process.on("uncaughtException", (error) => {
     console.error("Uncaught Exception:", error)
     process.exit(1)
 })
+
 process.on("unhandledRejection", (error) => {
     console.error("Unhandled Rejection:", error)
     process.exit(1)
 })
 
-// Increase the maximum number of listeners to avoid warnings
 process.setMaxListeners(20)
 
-// Resolve current file and directory paths
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-// Define a development logger configuration
 const devLogger = {
     target: "pino-pretty",
     options: {
@@ -41,58 +32,67 @@ const devLogger = {
     },
 } as const
 
-/**
- * Create and configure the Fastify server instance.
- */
-const createServer = async (): Promise<FastifyInstance<Http2SecureServer>> => {
+const createServer = async () => {
+    const enableHTTP2 = !!(conf.serverTlsCert && conf.serverTlsKey)
+
     const app = fastify({
-        trustProxy: "127.0.0.1,192.168.1.1/24",
-        http2: true,
-        https: {
-            allowHTTP1: true,
-            key: readFileSync(join(__dirname, "..", "certs", "tls.key")),
-            cert: readFileSync(join(__dirname, "..", "certs", "tls.crt")),
-        },
-        requestTimeout: 30000, // 30 seconds
-        keepAliveTimeout: 60000, // 60 seconds
-        bodyLimit: 1048576, // 1 MiB
+        trustProxy: true,
+        ...(enableHTTP2 === true && {
+            http2: true,
+            https: { allowHTTP1: true, cert: conf.serverTlsCert, key: conf.serverTlsKey },
+        }),
+        requestTimeout: conf.requestTimeout,
+        keepAliveTimeout: conf.keepAliveTimeout,
+        bodyLimit: conf.bodyLimit,
         logger: {
             transport: conf.isDevEnvironment ? devLogger : undefined,
         },
     }).withTypeProvider<TypeBoxTypeProvider>()
 
-    // Adjust CORS origins for development
     if (conf.isDevEnvironment && Array.isArray(conf.cors.origin)) {
-        conf.cors.origin.push(/localhost(:\d{1,5})?/)
+        conf.cors.origin.push(/^https?:\/\/localhost(:\d{1,5})?$/)
+        conf.cors.origin.push(/^https:\/\/[a-z0-9-]+\.ngrok(-free)?\.app$/)
+        conf.cors.origin.push(/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/)
     }
 
-    // Register security, utility, and health check plugins
     await app
-        .register(import("@fastify/helmet"), { global: true })
+        .register(import("@fastify/helmet"), {
+            global: true,
+            contentSecurityPolicy: {
+                directives: conf.csp.directives,
+            },
+        })
         .register(import("@fastify/cors"), conf.cors)
         .register(import("@fastify/formbody"))
         .register(import("@fastify/sensible"))
         .register(import("@fastify/under-pressure"), conf.healthcheck)
-        .register(redis, conf.redis)
-        .register(jwt)
-        .register(bullMQ, conf.bullMQ)
 
-    // Database and API documentation setup based on environment
     if (conf.isDevEnvironment) {
-        app.log.info("db: development")
-        await app
-            .register(knex, knexfile.development)
-            .register(import("@fastify/swagger"), conf.swagger)
-            .register(import("@fastify/swagger-ui"), conf.swaggerUI)
-    } else {
-        app.log.info("db: production")
-        await app.register(knex, conf.sql)
+        await app.register(import("@fastify/swagger"), conf.swagger).register(import("@fastify/basic-auth"), {
+            validate: async (username, password) => {
+                if (username !== conf.openapi.user || password !== conf.openapi.pass) {
+                    throw new Error("Unauthorized")
+                }
+            },
+            authenticate: { realm: "OpenAPI Documentation" },
+        })
+
+        await app.register(async (scope) => {
+            scope.addHook("onRequest", scope.basicAuth)
+            await scope.register(import("@scalar/fastify-api-reference"), {
+                routePrefix: "/openapi",
+            })
+        })
     }
 
-    // Register application routes
+    await app.register(jwt)
+    await app.register(schemas)
+    await app.register(db, conf.database.pool)
+    await app.register(pgboss, conf.database.queue)
+    await app.register(cache)
+    await app.register(nodemailer, conf.mailer)
     await app.register(routes)
 
-    // Setup graceful shutdown using close-with-grace
     const closeListeners = closeWithGrace({ delay: 2000 }, async ({ signal, err }) => {
         app.log.info("Graceful shutdown initiated")
         if (err) {
@@ -112,19 +112,16 @@ const createServer = async (): Promise<FastifyInstance<Http2SecureServer>> => {
     return app
 }
 
-/**
- * Start the Fastify server.
- */
 const startServer = async () => {
     try {
         const app = await createServer()
         await app.listen({
-            port: Number(conf.port),
             host: conf.host,
+            port: conf.port,
         })
         app.log.info(`Server is running at ${conf.host}:${conf.port}`)
     } catch (error) {
-        console.error("Error starting server:", error)
+        console.error("Failed to start server:", error)
         process.exit(1)
     }
 }

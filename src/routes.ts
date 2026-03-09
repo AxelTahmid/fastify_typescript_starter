@@ -1,17 +1,16 @@
-import authRoutes from "@app/auth/routes.js"
-import rootRoutes from "@app/base/routes.js"
-import galleryRoutes from "@app/gallery/routes.js"
-import type { FastifyInstance, FastifyPluginAsync, FastifyPluginOptions, FastifyReply } from "fastify"
+import authRoutes from "#app/auth/routes.js"
+import rootRoutes from "#app/base/routes.js"
+import galleryRoutes from "#app/gallery/routes.js"
+import type { FastifyInstance, FastifyPluginAsync } from "fastify"
 
-const routes: FastifyPluginAsync = async (app: FastifyInstance, opts: FastifyPluginOptions) => {
-    // Avoid bots crawling urls. No 404, Be smart. Confuse them.
-    app.setNotFoundHandler((_, reply: FastifyReply) => {
-        reply.code(500).send({ error: true, message: "Unknown Server Error" })
+const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
+    await app.setNotFoundHandler((_request, reply) => {
+        reply.code(404).send({ error: true, message: "404 - Route Not Found" })
     })
 
-    app.register(rootRoutes)
-    app.register(authRoutes, { prefix: "/v1/auth" })
-    app.register(galleryRoutes, { prefix: "/v1/gallery" })
+    await app.register(rootRoutes)
+    await app.register(authRoutes, { prefix: "/v1/auth" })
+    await app.register(galleryRoutes, { prefix: "/v1/gallery" })
 }
 
 export default routes
