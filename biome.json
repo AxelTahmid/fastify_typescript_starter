@@ -1,7 +1,12 @@
 {
     "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-    "organizeImports": {
-        "enabled": true
+    "assist": {
+        "enabled": true,
+        "actions": {
+            "source": {
+                "organizeImports": "on"
+            }
+        }
     },
     "vcs": {
         "enabled": true,
@@ -11,10 +16,7 @@
     },
     "files": {
         "ignoreUnknown": false,
-        "ignore": [
-            ".yarn/**",
-            ".husky/**"
-        ]
+        "includes": ["src/**", "!**/.yarn", "!**/.husky", "!**/dist"]
     },
     "formatter": {
         "enabled": true,
@@ -31,10 +33,23 @@
     },
     "linter": {
         "enabled": true,
+
         "rules": {
             "recommended": true,
             "complexity": {
                 "noForEach": "off"
+            },
+            "style": {
+                "noParameterAssign": "error",
+                "useAsConstAssertion": "error",
+                "useDefaultParameterLast": "error",
+                "useEnumInitializers": "error",
+                "useSelfClosingElements": "error",
+                "useSingleVarDeclarator": "error",
+                "noUnusedTemplateLiteral": "error",
+                "useNumberNamespace": "error",
+                "noInferrableTypes": "error",
+                "noUselessElse": "error"
             }
         }
     }
