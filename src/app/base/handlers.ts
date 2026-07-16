@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
-import { JOB_NAMES } from "#queue/workers/index.js"
-import type { QueueBody } from "./types.js"
+import type { CacheKeyBody } from "./types.js"
 
 class BaseHandler {
     constructor(private readonly fastify: FastifyInstance) {}
@@ -16,7 +15,7 @@ class BaseHandler {
     }
 
     public otpKeys = async (_request: FastifyRequest, reply: FastifyReply) => {
-        const data = await this.fastify.cache.get_pattern("otp:*")
+        const data = await this.fastify.cache.getPattern("otp:*")
 
         reply.code(200)
         return {
@@ -26,8 +25,8 @@ class BaseHandler {
         }
     }
 
-    public cacheData = async (request: FastifyRequest, reply: FastifyReply) => {
-        const key = (request.body as { key: string }).key
+    public cacheData = async (request: FastifyRequest<{ Body: CacheKeyBody }>, reply: FastifyReply) => {
+        const key = request.body.key
         const data = await this.fastify.cache.get(key)
 
         reply.code(200)
@@ -45,26 +44,6 @@ class BaseHandler {
         return {
             error: false,
             message: "Cache globally flushed",
-        }
-    }
-
-    public queueAction = async (request: FastifyRequest<{ Body: QueueBody }>, reply: FastifyReply) => {
-        switch (request.body.action) {
-            case "drain":
-                await this.fastify.queue.deleteQueuedJobs(JOB_NAMES.SEND_OTP_EMAIL)
-                break
-            case "clean":
-                await this.fastify.queue.deleteStoredJobs(JOB_NAMES.SEND_OTP_EMAIL)
-                break
-            case "obliterate":
-                await this.fastify.queue.deleteAllJobs(JOB_NAMES.SEND_OTP_EMAIL)
-                break
-        }
-
-        reply.code(200)
-        return {
-            error: false,
-            message: `Queue action ${request.body.action} performed successfully`,
         }
     }
 }

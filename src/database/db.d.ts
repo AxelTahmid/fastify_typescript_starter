@@ -9,10 +9,34 @@ export interface AuthUsers {
     email: string
     password: string
     email_verified: Generated<boolean>
-    role: "customer" | "admin" | "manager"
+    role_id: number
     is_banned: Generated<boolean>
     created_at: Timestamp
     updated_at: Timestamp
+}
+
+export interface Roles {
+    id: Generated<number>
+    slug: string
+    label: string
+    description: string | null
+    is_system: Generated<boolean>
+    created_at: Timestamp
+    updated_at: Timestamp
+}
+
+export interface Permissions {
+    id: Generated<number>
+    slug: string
+    label: string
+    description: Generated<string>
+    module: string
+    created_at: Timestamp
+}
+
+export interface RolePermissions {
+    role_id: number
+    permission_id: number
 }
 
 export interface Cache {
@@ -25,4 +49,7 @@ export interface Cache {
 export interface DB {
     auth_users: AuthUsers
     cache: Cache
+    permissions: Permissions
+    role_permissions: RolePermissions
+    roles: Roles
 }

@@ -1,5 +1,5 @@
-import { Type } from "typebox"
 import type { FastifySchema } from "fastify"
+import { Type } from "typebox"
 
 export namespace Data {
     export const baseResponse = Type.Object(
@@ -19,13 +19,6 @@ export namespace Data {
         { $id: "BaseResponse" },
     )
 
-    export const queueBody = Type.Object(
-        {
-            action: Type.Union([Type.Literal("drain"), Type.Literal("clean"), Type.Literal("obliterate")]),
-        },
-        { $id: "QueueBody" },
-    )
-
     export const cacheKeyBody = Type.Object(
         {
             key: Type.String(),
@@ -34,7 +27,7 @@ export namespace Data {
     )
 }
 
-export const models = [Data.baseResponse, Data.queueBody, Data.cacheKeyBody]
+export const models = [Data.baseResponse, Data.cacheKeyBody]
 
 const replySchema = (data?: object) => ({
     type: "object",
@@ -48,33 +41,26 @@ const replySchema = (data?: object) => ({
 
 export namespace RouteSchema {
     export const base: FastifySchema = {
-        description: "Health status of application",
+        summary: "Health status",
         tags: ["base"],
         response: { 200: { $ref: "BaseResponse#" } },
     }
 
     export const arrayofString: FastifySchema = {
-        description: "Get OTP keys in circulation",
+        summary: "Get OTP keys in circulation",
         tags: ["base"],
         response: { 200: replySchema({ type: "array", items: { type: "string" } }) },
     }
 
     export const cacheData: FastifySchema = {
-        description: "Get cached value by key",
+        summary: "Get cached value by key",
         tags: ["base"],
         body: Data.cacheKeyBody,
         response: { 200: replySchema() },
     }
 
-    export const queueAction: FastifySchema = {
-        description: "Perform queue maintenance action",
-        tags: ["base"],
-        body: Data.queueBody,
-        response: { 200: replySchema() },
-    }
-
     export const flushCache: FastifySchema = {
-        description: "Flush cache entries",
+        summary: "Flush cache entries",
         tags: ["base"],
         response: { 200: replySchema() },
     }

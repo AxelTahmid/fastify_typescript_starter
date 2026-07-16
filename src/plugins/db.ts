@@ -1,10 +1,16 @@
 import type { FastifyInstance } from "fastify"
 import fp from "fastify-plugin"
 import { DeduplicateJoinsPlugin, Kysely, PostgresDialect, sql } from "kysely"
-import { Pool, type PoolConfig } from "pg"
+import pg, { Pool, type PoolConfig } from "pg"
 import conf from "#config/environment.js"
 import type { DB } from "#database/db.d.js"
 import { createDbHelpers, type DbHelpers, getDbHealth } from "#database/helpers.js"
+
+// DATE stays a plain YYYY-MM-DD string and NUMERIC becomes a JS number —
+// otherwise pg hands back Date objects / strings that fail response
+// serialization against number/string schemas.
+pg.types.setTypeParser(pg.types.builtins.DATE, (value: string) => value)
+pg.types.setTypeParser(pg.types.builtins.NUMERIC, (value: string) => Number.parseFloat(value))
 
 declare module "fastify" {
     interface FastifyInstance {
@@ -41,6 +47,7 @@ async function fastifyDb(app: FastifyInstance, opts: PoolConfig) {
         const dbWithHelpers = db as Kysely<DB> & DbHelpers
         const helpers = createDbHelpers(db)
         dbWithHelpers.paginate = helpers.paginate
+        dbWithHelpers.filter = helpers.filter
         dbWithHelpers.pgerr = helpers.pgerr
         dbWithHelpers.isPgError = helpers.isPgError
         dbWithHelpers.health = helpers.health

@@ -7,3 +7,8 @@ export type ResetPassword = Static<typeof Data.resetPasswordBody>
 export type VerifyEmail = Static<typeof Data.verifyEmailBody>
 export type ReqOTPBody = Static<typeof Data.reqOTPBody>
 export type TokenBody = Static<typeof Data.tokenBody>
+
+export interface TokenPair {
+    accessToken: string
+    refreshToken: string
+}

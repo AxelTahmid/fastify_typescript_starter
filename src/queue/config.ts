@@ -10,4 +10,17 @@ export const queueConfigs: Record<JobName, Queue> = {
         expireInSeconds: 60 * 60,
         deleteAfterSeconds: 7 * 24 * 60 * 60,
     },
+    [JOB_NAMES.CACHE_PRUNE]: {
+        name: JOB_NAMES.CACHE_PRUNE,
+        retryLimit: 1,
+        retryDelay: 60,
+        retryBackoff: false,
+        expireInSeconds: 5 * 60,
+        deleteAfterSeconds: 24 * 60 * 60,
+    },
 }
+
+/** Cron expressions for scheduled jobs, registered in Queue.setupQueues. */
+export const CRON = {
+    HOURLY: "0 * * * *",
+} as const

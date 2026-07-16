@@ -1,4 +1,3 @@
-import "dotenv/config"
 import type { FastifyCorsOptions } from "@fastify/cors"
 import type { FastifyMultipartBaseOptions } from "@fastify/multipart"
 import type { SwaggerOptions } from "@fastify/swagger"
@@ -8,12 +7,16 @@ import type { ClientOptions } from "minio"
 import type { SendMailOptions, TransportOptions } from "nodemailer"
 import type { PoolConfig } from "pg"
 import type { ConstructorOptions } from "pg-boss"
+import { decodeBase64, env, isDevEnvironment, isProdEnvironment, isTestEnvironment, requireInProd } from "./env.js"
 
 interface StorageConfig {
     multer: FastifyMultipartBaseOptions["limits"]
     connection: ClientOptions
-    publicBaseUrl: string
-    bucket?: string
+    /** Endpoint the app uses to reach object storage (container-internal). */
+    internalEndpoint: string
+    /** Endpoint browsers use — presigned URL hosts are rewritten to this. */
+    publicEndpoint: string
+    bucket: string
 }
 
 interface MailerConfig {
@@ -22,7 +25,9 @@ interface MailerConfig {
 }
 
 interface AuthConfig {
-    accessTokenExpiresInSeconds: number
+    accessTokenTtlSeconds: number
+    refreshTokenTtlSeconds: number
+    refreshCookieName: string
     privateKeyBase64: string
     publicKeyBase64: string
 }
@@ -32,15 +37,23 @@ interface OpenApiAuthConfig {
     pass: string
 }
 
+interface SeedConfig {
+    adminEmail: string
+    adminPassword: string
+}
+
 interface AppConfig {
     host: string
     port: number
     serverTlsCert?: string
     serverTlsKey?: string
     isDevEnvironment: boolean
+    isTestEnvironment: boolean
+    isProdEnvironment: boolean
     keepAliveTimeout: number
     requestTimeout: number
     bodyLimit: number
+    logRedactPaths: string[]
     auth: AuthConfig
     cors: FastifyCorsOptions
     csp: {
@@ -65,76 +78,73 @@ interface AppConfig {
     healthcheck: FastifyUnderPressureOptions
     mailer: MailerConfig
     swagger: SwaggerOptions
-    captcha: {
-        secret?: string
-    }
     openapi: OpenApiAuthConfig
+    seed: SeedConfig
 }
 
 const dbUrl =
-    process.env.PG_CONNECTION_STRING ||
-    process.env.DB_CONNECTION_STRING ||
-    process.env.DATABASE_URL ||
-    `postgres://${process.env.DB_USER || "starteruser"}:${process.env.DB_PASSWORD || "starterpass"}@${process.env.DB_HOST || "localhost"}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || "starterdb"}`
+    env.PG_CONNECTION_STRING ||
+    env.DB_CONNECTION_STRING ||
+    env.DATABASE_URL ||
+    `postgres://${env.DB_USER}:${requireInProd("DB_PASSWORD", "starterpass")}@${env.DB_HOST}:${env.DB_PORT}/${env.DB_NAME}`
 
-const parseNumber = (value: string | undefined, defaultValue: number): number => {
-    if (value === undefined || value === null || value.trim().length === 0) {
-        return defaultValue
-    }
-
-    const parsed = Number.parseInt(value.trim(), 10)
-    return Number.isNaN(parsed) ? defaultValue : parsed
-}
-
-const parseDecimal = (value: string | undefined, defaultValue: number): number => {
-    if (value === undefined || value === null || value.trim().length === 0) {
-        return defaultValue
-    }
-
-    const parsed = Number.parseFloat(value.trim())
-    return Number.isNaN(parsed) ? defaultValue : parsed
-}
-
-const parseStorageConnection = (value: string | undefined): Pick<StorageConfig, "connection" | "publicBaseUrl"> => {
-    const rawEndpoint = value?.trim().length ? value.trim() : "http://localhost:9000"
+const parseStorageConnection = (): Pick<StorageConfig, "connection" | "internalEndpoint" | "publicEndpoint"> => {
+    const rawEndpoint = env.S3_ENDPOINT.trim()
     const normalizedEndpoint = rawEndpoint.includes("://") ? rawEndpoint : `http://${rawEndpoint}`
     const parsedEndpoint = new URL(normalizedEndpoint)
     const useSSL = parsedEndpoint.protocol === "https:"
     const port = parsedEndpoint.port ? Number(parsedEndpoint.port) : useSSL ? 443 : 80
+    const internalEndpoint = `${useSSL ? "https" : "http"}://${parsedEndpoint.hostname}${
+        parsedEndpoint.port ? `:${parsedEndpoint.port}` : ""
+    }`
 
     return {
         connection: {
             endPoint: parsedEndpoint.hostname,
             port,
             useSSL,
-            region: process.env.S3_REGION || "us-east-1",
-            accessKey: process.env.S3_ACCESS_KEY || "",
-            secretKey: process.env.S3_SECRET_PASSWORD || "",
+            region: env.S3_REGION,
+            accessKey: requireInProd("S3_ACCESS_KEY", "minioadmin"),
+            secretKey: requireInProd("S3_SECRET_PASSWORD", "minioadmin"),
             pathStyle: true,
         },
-        publicBaseUrl: `${useSSL ? "https" : "http"}://${parsedEndpoint.hostname}${parsedEndpoint.port ? `:${parsedEndpoint.port}` : ""}`,
+        internalEndpoint,
+        publicEndpoint: env.S3_PUBLIC_ENDPOINT?.trim() || internalEndpoint,
     }
 }
 
-const storageConnection = parseStorageConnection(process.env.S3_ENDPOINT)
+const storageConnection = parseStorageConnection()
 
 const config: AppConfig = {
-    host: process.env.HOST || "0.0.0.0",
-    port: parseNumber(process.env.PORT, 3000),
-    isDevEnvironment: process.env.NODE_ENV === "development",
-    serverTlsCert: process.env.SERVER_TLS_CERT
-        ? Buffer.from(process.env.SERVER_TLS_CERT, "base64").toString("utf8")
-        : undefined,
-    serverTlsKey: process.env.SERVER_TLS_KEY
-        ? Buffer.from(process.env.SERVER_TLS_KEY, "base64").toString("utf8")
-        : undefined,
-    keepAliveTimeout: parseNumber(process.env.SERVER_KEEP_ALIVE_TIMEOUT, 60000),
-    requestTimeout: parseNumber(process.env.SERVER_REQUEST_TIMEOUT, 30000),
-    bodyLimit: parseNumber(process.env.SERVER_BODY_LIMIT, 5 * 1024 * 1024),
+    host: env.HOST,
+    port: env.PORT,
+    isDevEnvironment,
+    isTestEnvironment,
+    isProdEnvironment,
+    serverTlsCert: decodeBase64(env.SERVER_TLS_CERT),
+    serverTlsKey: decodeBase64(env.SERVER_TLS_KEY),
+    keepAliveTimeout: env.SERVER_KEEP_ALIVE_TIMEOUT,
+    requestTimeout: env.SERVER_REQUEST_TIMEOUT,
+    bodyLimit: env.SERVER_BODY_LIMIT,
+    logRedactPaths: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "res.headers['set-cookie']",
+        "*.password",
+        "*.newPassword",
+        "*.token",
+        "*.accessToken",
+        "*.refreshToken",
+        "*.secret",
+        "*.secretKey",
+        "*.apiKey",
+    ],
     auth: {
-        accessTokenExpiresInSeconds: parseNumber(process.env.ADMIN_ACCESS_TOKEN_EXPIRES_SECONDS, 24 * 60 * 60),
-        privateKeyBase64: process.env.JWT_PRIVATE_KEY || "",
-        publicKeyBase64: process.env.JWT_PUBLIC_KEY || "",
+        accessTokenTtlSeconds: env.AUTH_ACCESS_TOKEN_TTL,
+        refreshTokenTtlSeconds: env.AUTH_REFRESH_TOKEN_TTL,
+        refreshCookieName: env.AUTH_REFRESH_COOKIE_NAME,
+        privateKeyBase64: env.JWT_PRIVATE_KEY || "",
+        publicKeyBase64: env.JWT_PUBLIC_KEY || "",
     },
     cors: {
         origin: [],
@@ -166,30 +176,30 @@ const config: AppConfig = {
     },
     database: {
         pool: {
-            application_name: process.env.DB_APP_NAME || "fastify-starter",
+            application_name: env.DB_APP_NAME,
             connectionString: dbUrl,
-            min: parseNumber(process.env.DB_POOL_MIN, 1),
-            max: parseNumber(process.env.DB_POOL_MAX, 10),
-            idleTimeoutMillis: parseNumber(process.env.DB_POOL_IDLE_TIMEOUT, 10000),
-            connectionTimeoutMillis: parseNumber(process.env.DB_POOL_CONNECTION_TIMEOUT, 5000),
-            query_timeout: parseNumber(process.env.DB_QUERY_TIMEOUT, 30000),
-            lock_timeout: parseNumber(process.env.DB_LOCK_TIMEOUT, 5000),
-            statement_timeout: parseNumber(process.env.DB_STATEMENT_TIMEOUT, 30000),
-            keepAliveInitialDelayMillis: parseNumber(process.env.DB_KEEP_ALIVE_INITIAL_DELAY, 30000),
-            idle_in_transaction_session_timeout: parseNumber(process.env.DB_IDLE_IN_TRANSACTION_SESSION_TIMEOUT, 30000),
+            min: env.DB_POOL_MIN,
+            max: env.DB_POOL_MAX,
+            idleTimeoutMillis: env.DB_POOL_IDLE_TIMEOUT,
+            connectionTimeoutMillis: env.DB_POOL_CONNECTION_TIMEOUT,
+            query_timeout: env.DB_QUERY_TIMEOUT,
+            lock_timeout: env.DB_LOCK_TIMEOUT,
+            statement_timeout: env.DB_STATEMENT_TIMEOUT,
+            keepAliveInitialDelayMillis: env.DB_KEEP_ALIVE_INITIAL_DELAY,
+            idle_in_transaction_session_timeout: env.DB_IDLE_IN_TRANSACTION_SESSION_TIMEOUT,
         },
         queue: {
             connectionString: dbUrl,
-            application_name: process.env.PGBOSS_APP_NAME || "fastify-starter-queue",
-            schema: process.env.PGBOSS_SCHEMA || "queue",
-            migrate: process.env.PGBOSS_MIGRATE !== "false",
-            max: parseNumber(process.env.PGBOSS_MAX_CONN, 5),
-            archiveCompletedAfterSeconds: parseNumber(process.env.PGBOSS_ARCHIVE_COMPLETED_AFTER, 60 * 60 * 12),
-            archiveFailedAfterSeconds: parseNumber(process.env.PGBOSS_ARCHIVE_FAILED_AFTER, 60 * 60 * 12),
-            deleteAfterDays: parseNumber(process.env.PGBOSS_DELETE_AFTER_DAYS, 7),
-            monitorStateIntervalMinutes: parseNumber(process.env.PGBOSS_MONITOR_INTERVAL, 5),
+            application_name: env.PGBOSS_APP_NAME,
+            schema: env.PGBOSS_SCHEMA,
+            migrate: env.PGBOSS_MIGRATE,
+            max: env.PGBOSS_MAX_CONN,
+            archiveCompletedAfterSeconds: env.PGBOSS_ARCHIVE_COMPLETED_AFTER,
+            archiveFailedAfterSeconds: env.PGBOSS_ARCHIVE_FAILED_AFTER,
+            deleteAfterDays: env.PGBOSS_DELETE_AFTER_DAYS,
+            monitorStateIntervalMinutes: env.PGBOSS_MONITOR_INTERVAL,
         } as ConstructorOptions & Record<string, unknown>,
-        timezone: process.env.DB_TIMEZONE || "UTC",
+        timezone: env.DB_TIMEZONE,
     },
     storage: {
         multer: {
@@ -200,14 +210,15 @@ const config: AppConfig = {
             files: 1,
         },
         connection: storageConnection.connection,
-        publicBaseUrl: storageConnection.publicBaseUrl,
-        bucket: process.env.S3_BUCKET,
+        internalEndpoint: storageConnection.internalEndpoint,
+        publicEndpoint: storageConnection.publicEndpoint,
+        bucket: env.S3_BUCKET,
     },
     healthcheck: {
-        maxEventLoopDelay: parseNumber(process.env.MAX_EVENT_LOOP_DELAY, 1000),
-        maxEventLoopUtilization: parseDecimal(process.env.MAX_EVENT_LOOP_UTILIZATION, 0.9),
-        message: process.env.UNDER_PRESSURE_MESSAGE || "Server under pressure!",
-        retryAfter: parseNumber(process.env.RETRY_AFTER, 60),
+        maxEventLoopDelay: env.MAX_EVENT_LOOP_DELAY,
+        maxEventLoopUtilization: env.MAX_EVENT_LOOP_UTILIZATION,
+        message: env.UNDER_PRESSURE_MESSAGE,
+        retryAfter: env.RETRY_AFTER,
         exposeStatusRoute: {
             routeOpts: {},
             routeResponseSchemaOpts: {
@@ -228,29 +239,29 @@ const config: AppConfig = {
     },
     mailer: {
         defaults: {
-            from: process.env.MAILER_DEFAULT_FROM || "Starter <no-reply@example.com>",
-            subject: process.env.MAILER_DEFAULT_SUBJECT || "Starter Notification",
-            replyTo: process.env.MAILER_DEFAULT_REPLY_TO,
-            priority: (process.env.MAILER_DEFAULT_PRIORITY as "high" | "normal" | "low") || "normal",
+            from: env.MAILER_DEFAULT_FROM,
+            subject: env.MAILER_DEFAULT_SUBJECT,
+            replyTo: env.MAILER_DEFAULT_REPLY_TO,
+            priority: env.MAILER_DEFAULT_PRIORITY,
         },
         transport: {
-            host: process.env.SMTP_HOST || "localhost",
-            port: parseNumber(process.env.SMTP_PORT, 1025),
-            secure: process.env.SMTP_SECURE === "true",
-            pool: process.env.SMTP_POOL === "true",
-            maxConnections: parseNumber(process.env.SMTP_MAX_CONNECTIONS, 5),
-            maxMessages: parseNumber(process.env.SMTP_MAX_MESSAGES, 100),
-            connectionTimeout: parseNumber(process.env.SMTP_CONNECTION_TIMEOUT, 2 * 60 * 1000),
-            socketTimeout: parseNumber(process.env.SMTP_SOCKET_TIMEOUT, 10 * 60 * 1000),
+            host: env.SMTP_HOST,
+            port: env.SMTP_PORT,
+            secure: env.SMTP_SECURE,
+            pool: env.SMTP_POOL,
+            maxConnections: env.SMTP_MAX_CONNECTIONS,
+            maxMessages: env.SMTP_MAX_MESSAGES,
+            connectionTimeout: env.SMTP_CONNECTION_TIMEOUT,
+            socketTimeout: env.SMTP_SOCKET_TIMEOUT,
             auth:
-                process.env.SMTP_USER && process.env.SMTP_PASS
+                env.SMTP_USER && env.SMTP_PASS
                     ? {
-                          user: process.env.SMTP_USER,
-                          pass: process.env.SMTP_PASS,
+                          user: env.SMTP_USER,
+                          pass: env.SMTP_PASS,
                       }
                     : undefined,
             tls: {
-                rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== "false",
+                rejectUnauthorized: env.SMTP_TLS_REJECT_UNAUTHORIZED,
             },
         } as TransportOptions,
     },
@@ -264,7 +275,7 @@ const config: AppConfig = {
             },
             servers: [
                 {
-                    url: "http://localhost:3000",
+                    url: `http://localhost:${env.PORT}`,
                     description: "Development server",
                 },
             ],
@@ -294,12 +305,13 @@ const config: AppConfig = {
             },
         },
     },
-    captcha: {
-        secret: process.env.TURNSTILE_SECRET_KEY,
-    },
     openapi: {
-        user: process.env.OPENAPI_USER || "root",
-        pass: process.env.OPENAPI_PASS || "root",
+        user: env.OPENAPI_USER,
+        pass: env.OPENAPI_PASS,
+    },
+    seed: {
+        adminEmail: env.SEED_ADMIN_EMAIL,
+        adminPassword: requireInProd("SEED_ADMIN_PASSWORD", "changeme-admin-password"),
     },
 }
 

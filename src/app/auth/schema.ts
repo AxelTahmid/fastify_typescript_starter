@@ -1,5 +1,5 @@
-import { Type } from "typebox"
 import type { FastifySchema } from "fastify"
+import { Type } from "typebox"
 
 export namespace Data {
     export const userBody = Type.Object(
@@ -7,7 +7,7 @@ export namespace Data {
             id: Type.Number(),
             email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
             email_verified: Type.Boolean(),
-            role: Type.Union([Type.Literal("customer"), Type.Literal("admin"), Type.Literal("manager")]),
+            role: Type.String(),
             is_banned: Type.Boolean(),
             created_at: Type.String(),
             updated_at: Type.String(),
@@ -18,8 +18,7 @@ export namespace Data {
     export const userLoginBody = Type.Object(
         {
             email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
-            password: Type.String(),
-            captchaToken: Type.String({ minLength: 1 }),
+            password: Type.String({ minLength: 8, maxLength: 128 }),
         },
         { $id: "AuthUserLogin" },
     )
@@ -27,9 +26,8 @@ export namespace Data {
     export const resetPasswordBody = Type.Object(
         {
             email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
-            password: Type.String(),
+            password: Type.String({ minLength: 8, maxLength: 128 }),
             code: Type.String({ minLength: 5, maxLength: 6 }),
-            captchaToken: Type.String({ minLength: 1 }),
         },
         { $id: "AuthResetPassword" },
     )
@@ -37,7 +35,6 @@ export namespace Data {
     export const verifyEmailBody = Type.Object(
         {
             code: Type.String({ minLength: 5, maxLength: 6 }),
-            captchaToken: Type.String({ minLength: 1 }),
         },
         { $id: "AuthVerifyEmail" },
     )
@@ -45,7 +42,6 @@ export namespace Data {
     export const reqOTPBody = Type.Object(
         {
             email: Type.String({ minLength: 6, maxLength: 100, format: "email" }),
-            captchaToken: Type.String({ minLength: 1 }),
         },
         { $id: "AuthOtpRequest" },
     )
@@ -79,41 +75,68 @@ const replySchema = (data?: object) => ({
 
 export namespace RouteSchema {
     export const login: FastifySchema = {
-        description: "Login existing user",
+        summary: "Login",
+        description: "Authenticate a user. Returns an access token; the refresh token is set as an httpOnly cookie.",
         tags: ["auth"],
         body: Data.userLoginBody,
         response: { 200: replySchema({ $ref: "AuthToken#" }) },
     }
 
     export const register: FastifySchema = {
-        description: "Register new user",
+        summary: "Register",
+        description: "Register a new user with the default role",
         tags: ["auth"],
         body: Data.userLoginBody,
         response: { 201: replySchema({ $ref: "AuthToken#" }) },
     }
 
+    export const refresh: FastifySchema = {
+        summary: "Refresh session",
+        description: "Exchange the refresh-token cookie for a new token pair (the refresh token is rotated)",
+        tags: ["auth"],
+        response: { 200: replySchema({ $ref: "AuthToken#" }) },
+    }
+
+    export const logout: FastifySchema = {
+        summary: "Logout",
+        description: "Revoke the current refresh token and clear its cookie",
+        tags: ["auth"],
+        response: { 200: replySchema() },
+    }
+
+    export const logoutAll: FastifySchema = {
+        summary: "Logout everywhere",
+        description: "Revoke every refresh token issued to the current user",
+        tags: ["auth"],
+        response: { 200: replySchema() },
+    }
+
     export const me: FastifySchema = {
-        description: "Fetch user information",
+        summary: "Current user",
+        description: "Fetch the authenticated user's profile",
         tags: ["auth"],
         response: { 200: replySchema({ $ref: "AuthUser#" }) },
     }
 
     export const requestOTP: FastifySchema = {
-        description: "Request OTP for user",
+        summary: "Request OTP",
+        description: "Send a one-time code to the given email (always responds 200 to prevent account enumeration)",
         tags: ["auth"],
         body: Data.reqOTPBody,
         response: { 200: replySchema() },
     }
 
     export const verifyEmail: FastifySchema = {
-        description: "Verify user email",
+        summary: "Verify email",
+        description: "Confirm the OTP sent to the user's email",
         tags: ["auth"],
         body: Data.verifyEmailBody,
         response: { 201: replySchema({ $ref: "AuthToken#" }) },
     }
 
     export const resetPassword: FastifySchema = {
-        description: "Reset user password",
+        summary: "Reset password",
+        description: "Set a new password using an emailed OTP; revokes all existing sessions",
         tags: ["auth"],
         body: Data.resetPasswordBody,
         response: { 201: replySchema() },

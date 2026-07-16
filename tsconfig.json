@@ -20,11 +20,13 @@
         "newLine": "lf",
         "baseUrl": "./src",
         "paths": {
+            "#acl/*": ["acl/*"],
             "#app/*": ["app/*"],
             "#plugins/*": ["plugins/*"],
             "#database/*": ["database/*"],
             "#config/*": ["config/*"],
-            "#queue/*": ["queue/*"]
+            "#queue/*": ["queue/*"],
+            "#utils/*": ["utils/*"]
         }
     },
     "watchOptions": {

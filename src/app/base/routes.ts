@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify"
+import { Permission } from "#acl/index.js"
 import BaseHandler from "./handlers.js"
 import { RouteSchema } from "./schema.js"
 
@@ -12,10 +13,11 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
         handler: baseHandler.base,
     })
 
+    // cache introspection is debug tooling — full admins only
     app.route({
         method: "POST",
         url: "/otp",
-        onRequest: app.role.restricted,
+        onRequest: app.auth.can(Permission.SYSTEM_ADMIN),
         schema: RouteSchema.arrayofString,
         handler: baseHandler.otpKeys,
     })
@@ -23,23 +25,15 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.route({
         method: "POST",
         url: "/cache",
-        onRequest: app.role.restricted,
+        onRequest: app.auth.can(Permission.SYSTEM_ADMIN),
         schema: RouteSchema.cacheData,
         handler: baseHandler.cacheData,
     })
 
     app.route({
         method: "POST",
-        url: "/queue",
-        onRequest: app.role.restricted,
-        schema: RouteSchema.queueAction,
-        handler: baseHandler.queueAction,
-    })
-
-    app.route({
-        method: "POST",
         url: "/flush",
-        onRequest: app.role.restricted,
+        onRequest: app.auth.can(Permission.SYSTEM_ADMIN),
         schema: RouteSchema.flushCache,
         handler: baseHandler.flushCache,
     })

@@ -1,14 +1,12 @@
-import conf from "#config/environment.js"
 import fastifyMultipart from "@fastify/multipart"
 import type { FastifyInstance, FastifyPluginAsync } from "fastify"
-
-import s3object from "#plugins/s3object.js"
+import { Permission } from "#acl/index.js"
+import conf from "#config/environment.js"
 import GalleryHandler from "./handlers.js"
 import { RouteSchema } from "./schema.js"
 
 const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
     await app.register(fastifyMultipart, { limits: conf.storage.multer })
-    await app.register(s3object, conf.storage.connection)
 
     const galleryHandler = new GalleryHandler(app)
 
@@ -22,15 +20,23 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.route({
         method: "PUT",
         url: "/upload",
-        onRequest: app.role.restricted,
+        onRequest: app.auth.can(Permission.GALLERY_WRITE),
         schema: RouteSchema.upload,
         handler: galleryHandler.upload,
     })
 
     app.route({
         method: "POST",
+        url: "/upload-url",
+        onRequest: app.auth.can(Permission.GALLERY_WRITE),
+        schema: RouteSchema.presignedUpload,
+        handler: galleryHandler.presignedUpload,
+    })
+
+    app.route({
+        method: "POST",
         url: "/flush",
-        onRequest: app.role.restricted,
+        onRequest: app.auth.can(Permission.GALLERY_WRITE),
         schema: RouteSchema.flush,
         handler: galleryHandler.flush,
     })
@@ -38,7 +44,7 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.route({
         method: "DELETE",
         url: "/selected",
-        onRequest: app.role.restricted,
+        onRequest: app.auth.can(Permission.GALLERY_WRITE),
         schema: RouteSchema.destroyMany,
         handler: galleryHandler.destroyMany,
     })
@@ -46,7 +52,7 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
     app.route({
         method: "DELETE",
         url: "/",
-        onRequest: app.role.restricted,
+        onRequest: app.auth.can(Permission.GALLERY_WRITE),
         schema: RouteSchema.destroy,
         handler: galleryHandler.destroy,
     })

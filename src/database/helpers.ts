@@ -72,6 +72,58 @@ export async function paginate<T>(
 
 export const pgerr = PG_ERROR_CODES
 
+/**
+ * Composable query filters for list endpoints. All are no-ops when the
+ * value is absent, so handlers can pipe query params straight through.
+ */
+export const filter = {
+    /** Case-insensitive substring match across any of the given columns. */
+    search<T>(query: SelectQueryBuilder<any, any, T>, columns: string[], term?: string) {
+        if (!term?.trim() || columns.length === 0) {
+            return query
+        }
+        const pattern = `%${term.trim()}%`
+        return query.where((eb: any) => eb.or(columns.map((column) => eb(sql.ref(column), "ilike", pattern))))
+    },
+
+    /** Inclusive date range on a timestamp/date column. */
+    date<T>(query: SelectQueryBuilder<any, any, T>, column: string, from?: string, to?: string) {
+        let next = query
+        if (from) {
+            next = next.where(sql.ref(column), ">=", from) as typeof next
+        }
+        if (to) {
+            next = next.where(sql.ref(column), "<=", to) as typeof next
+        }
+        return next
+    },
+
+    /** Exact match, skipped when the value is undefined/empty. */
+    status<T>(query: SelectQueryBuilder<any, any, T>, column: string, value?: string | number | boolean) {
+        if (value === undefined || value === "") {
+            return query
+        }
+        return query.where(sql.ref(column), "=", value)
+    },
+
+    /**
+     * Sorting restricted to an allow-list mapping API sort keys to real
+     * columns — a client can never sort by an unexposed column.
+     */
+    sort<T>(
+        query: SelectQueryBuilder<any, any, T>,
+        allowed: Record<string, string>,
+        sortBy?: string,
+        direction: "asc" | "desc" = "desc",
+    ) {
+        const column = sortBy ? allowed[sortBy] : undefined
+        if (!column) {
+            return query
+        }
+        return query.orderBy(sql.ref(column), direction)
+    },
+}
+
 export interface DbHealthInfo {
     version: string
     uptime: string
@@ -100,6 +152,7 @@ export const getDbHealth = async (db: Kysely<DB>): Promise<DbHealthInfo> => {
 
 export interface DbHelpers {
     paginate: <T>(query: SelectQueryBuilder<any, any, T>, options?: PaginateOptions) => Promise<PaginationResult<T>>
+    filter: typeof filter
     pgerr: typeof pgerr
     isPgError: typeof isPgError
     health: () => Promise<DbHealthInfo>
@@ -107,6 +160,7 @@ export interface DbHelpers {
 
 export const createDbHelpers = (db: Kysely<DB>): DbHelpers => ({
     paginate: (query, options) => paginate(db, query, options),
+    filter,
     pgerr,
     isPgError,
     health: () => getDbHealth(db),

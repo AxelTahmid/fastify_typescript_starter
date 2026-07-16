@@ -1,7 +1,8 @@
 import type { SendOptions } from "pg-boss"
 import { QueueOperations } from "./base/index.js"
-import { queueConfigs } from "./config.js"
+import { CRON, queueConfigs } from "./config.js"
 import {
+    createCachePruneHandler,
     createSendOtpEmailHandler,
     JOB_NAMES,
     type JobName,
@@ -26,6 +27,10 @@ export class Queue extends QueueOperations {
         }
 
         await this.pgBoss.work(JOB_NAMES.SEND_OTP_EMAIL, { batchSize: 1 }, createSendOtpEmailHandler(this.app))
+        await this.pgBoss.work(JOB_NAMES.CACHE_PRUNE, { batchSize: 1 }, createCachePruneHandler(this.app))
+
+        // recurring jobs — singletonKey ensures one instance per tick
+        await this.pgBoss.schedule(JOB_NAMES.CACHE_PRUNE, CRON.HOURLY, {}, { singletonKey: JOB_NAMES.CACHE_PRUNE })
     }
 
     async publishTypedJob<T extends JobName>(

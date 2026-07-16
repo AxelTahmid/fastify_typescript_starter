@@ -1,13 +1,10 @@
 import type { FastifyInstance, FastifyPluginAsync } from "fastify"
-import bcrypt from "#plugins/bcrypt.js"
 import AuthHandler from "./handler.js"
 import AuthRepository from "./repository.js"
 import { RouteSchema } from "./schema.js"
 import AuthService from "./service.js"
 
 const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
-    await app.register(bcrypt, { saltWorkFactor: 10 })
-
     const repo = new AuthRepository(app.db)
     const svc = new AuthService(app, repo)
     const authHandler = new AuthHandler(app, svc, repo)
@@ -24,6 +21,28 @@ const routes: FastifyPluginAsync = async (app: FastifyInstance) => {
         url: "/login",
         schema: RouteSchema.login,
         handler: authHandler.login,
+    })
+
+    app.route({
+        method: "POST",
+        url: "/refresh",
+        schema: RouteSchema.refresh,
+        handler: authHandler.refresh,
+    })
+
+    app.route({
+        method: "POST",
+        url: "/logout",
+        schema: RouteSchema.logout,
+        handler: authHandler.logout,
+    })
+
+    app.route({
+        method: "POST",
+        url: "/logout-all",
+        onRequest: app.authenticate,
+        schema: RouteSchema.logoutAll,
+        handler: authHandler.logoutAll,
     })
 
     app.route({
