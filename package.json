@@ -5,7 +5,7 @@
     "type": "module",
     "author": "AxelTahmid",
     "license": "Apache-2.0",
-    "packageManager": "yarn@4.9.1",
+    "packageManager": "yarn@4.17.1",
     "engines": {
         "node": ">=24.0.0"
     },
