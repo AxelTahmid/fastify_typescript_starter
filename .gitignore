@@ -60,5 +60,6 @@ profile*
 *.pem
 *.crt
 *.key
+*.gz
 
 dist
