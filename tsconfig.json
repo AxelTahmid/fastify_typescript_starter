@@ -18,15 +18,14 @@
         "isolatedModules": true,
         "noFallthroughCasesInSwitch": true,
         "newLine": "lf",
-        "baseUrl": "./src",
         "paths": {
-            "#acl/*": ["acl/*"],
-            "#app/*": ["app/*"],
-            "#plugins/*": ["plugins/*"],
-            "#database/*": ["database/*"],
-            "#config/*": ["config/*"],
-            "#queue/*": ["queue/*"],
-            "#utils/*": ["utils/*"]
+            "#acl/*": ["./src/acl/*"],
+            "#app/*": ["./src/app/*"],
+            "#plugins/*": ["./src/plugins/*"],
+            "#database/*": ["./src/database/*"],
+            "#config/*": ["./src/config/*"],
+            "#queue/*": ["./src/queue/*"],
+            "#utils/*": ["./src/utils/*"]
         }
     },
     "watchOptions": {
