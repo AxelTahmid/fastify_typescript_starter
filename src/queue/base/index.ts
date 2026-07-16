@@ -19,17 +19,13 @@ export class QueueOperations {
         return this.pgBoss.getJobById(queue, jobId)
     }
 
+    /** QueueResult includes live counts (queued/ready/active/failed/total). */
     async getQueue(queueName: string): Promise<QueueResult | null> {
         return this.pgBoss.getQueue(queueName)
     }
 
     async getQueues(): Promise<QueueResult[]> {
         return this.pgBoss.getQueues()
-    }
-
-    /** Number of jobs waiting to be worked. */
-    async getQueueSize(queueName: string): Promise<number> {
-        return this.pgBoss.getQueueSize(queueName)
     }
 
     async cancelJob(queueName: string, jobId: string): Promise<void> {

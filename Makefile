@@ -189,7 +189,7 @@ db-seed:
 ## db-types: Generate TypeScript database types from the live schema
 db-types:
 	@echo "Generating Kysely DB types..."
-	$(kysely_codegen) --out-file src/database/db.d.ts
+	$(kysely_codegen) --exclude-pattern="queue.*" --out-file src/database/db.d.ts
 
 ## db-query: Execute SQL query inside the database container
 db-query:

@@ -10,8 +10,8 @@ export interface AuthUserRecord {
     role_id: number
     role: string
     is_banned: boolean
-    created_at: string
-    updated_at: string
+    created_at: Date | string
+    updated_at: Date | string
 }
 
 const USER_COLUMNS = [

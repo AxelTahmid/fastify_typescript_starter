@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto"
 import type { FastifyInstance } from "fastify"
 import { DEFAULT_ROLE_SLUG, effectivePermissions } from "#acl/index.js"
 import { hashPassword, verifyPassword } from "#utils/password.js"
-import { assertRateLimit } from "#utils/rate-limit.js"
+import { assertRateLimit, clearRateLimit } from "#utils/rate-limit.js"
 import type AuthRepository from "./repository.js"
 import type { AuthUserRecord } from "./repository.js"
 import type { ResetPassword, TokenPair, UserLogin } from "./types.js"
@@ -46,6 +46,9 @@ class AuthService {
         if (user.is_banned) {
             throw this.app.httpErrors.forbidden(`${user.email} is banned`)
         }
+
+        // a successful login clears the attempt window
+        await clearRateLimit(this.app, `login:${email}`)
 
         return this.issuePair(user)
     }

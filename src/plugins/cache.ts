@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import fp from "fastify-plugin"
 import { type Kysely, sql } from "kysely"
-import type { DB } from "#database/db.d.js"
+import type { DB, Json } from "#database/db.d.js"
 
 declare module "fastify" {
     interface FastifyInstance {
@@ -34,15 +34,15 @@ export class CacheService {
             .selectFrom("cache")
             .select(["value"])
             .where("key", "=", key)
-            .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", sql<string>`NOW()`)]))
+            .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", sql<Date>`NOW()`)]))
             .executeTakeFirst()
 
         return item ? (item.value as T) : null
     }
 
     async set(key: string, data: unknown, ttlSeconds = 300): Promise<void> {
-        const value = sql<unknown>`${JSON.stringify(data)}::jsonb`
-        const expiresAt = ttlSeconds ? sql<string>`NOW() + make_interval(secs => ${ttlSeconds})` : null
+        const value = sql<Json>`${JSON.stringify(data)}::jsonb`
+        const expiresAt = ttlSeconds ? sql<Date>`NOW() + make_interval(secs => ${ttlSeconds})` : null
 
         await this.db
             .insertInto("cache")
@@ -51,7 +51,7 @@ export class CacheService {
                 oc.column("key").doUpdateSet({
                     value,
                     expires_at: expiresAt,
-                    created_at: sql<string>`NOW()`,
+                    created_at: sql<Date>`NOW()`,
                 }),
             )
             .execute()
@@ -98,7 +98,7 @@ export class CacheService {
             .selectFrom("cache")
             .select("key")
             .where("key", "like", pattern.replace(/\*/g, "%"))
-            .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", sql<string>`NOW()`)]))
+            .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", sql<Date>`NOW()`)]))
             .execute()
 
         return items.map((item) => item.key)
@@ -109,7 +109,7 @@ export class CacheService {
         const result = await this.db
             .deleteFrom("cache")
             .where("expires_at", "is not", null)
-            .where("expires_at", "<", sql<string>`NOW()`)
+            .where("expires_at", "<", sql<Date>`NOW()`)
             .executeTakeFirst()
 
         return Number(result?.numDeletedRows ?? 0n)

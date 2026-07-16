@@ -21,12 +21,16 @@ Out of the box, this template includes:
 - Fastify 5 with TypeScript and ESM
 - PostgreSQL as the primary application datastore
 - Kysely for typed query building and migrations
-- `pg-boss` for durable background job processing
-- ES256 JWT authentication primitives
-- MinIO / S3-compatible object storage support
-- a small database-backed cache service
+- `pg-boss` for durable background job processing, cron scheduling, and a guarded queue admin API
+- ES256 JWT auth: short-lived access tokens carrying permissions, revocable refresh tokens in httpOnly cookies
+- a code-first, DB-backed ACL (permission catalog in code, runtime-editable roles in the database)
+- argon2id password hashing with OWASP parameters
+- MinIO / S3-compatible object storage with presigned browser-direct uploads
+- a database-backed cache service that also powers rate limiting and token revocation
+- fail-fast environment validation with TypeBox
 - OpenAPI 3.1 generation and Scalar documentation UI in development
-- Docker Compose for the app, database, and local mail tooling
+- integration and unit tests on Node's built-in runner, enforced in CI
+- Docker Compose for the app, database, object storage, and local mail tooling
 - Mailpit for inspecting local email flows
 - Biome for linting and formatting
 - Lefthook for lightweight Git hook automation
@@ -164,13 +168,28 @@ Object storage is a common need even in relatively small systems. Using an S3-co
 
 JWT signing is configured around ES256 keys. This is a good default for applications that want a cleaner separation between signing and verification concerns and want production secret handling to remain explicit.
 
+### Sessions: Access + Refresh Tokens
+
+Access tokens are short-lived (10 minutes by default) and carry the user's expanded permission slugs, so authorization on the hot path is a zero-database-read check. Refresh tokens travel only as httpOnly `SameSite=Strict` cookies scoped to the auth routes, carry a `jti`, and are rotated on every refresh. Revocation runs through the cache table: single logout denylists one `jti`, "logout everywhere" sets a per-user watermark that kills every earlier token.
+
+### ACL: Permissions In Code, Roles In The Database
+
+The permission vocabulary is a TypeScript enum (`src/acl/slugs.ts`) with a compile-time-complete catalog — adding a slug without metadata fails the build. Only wildcards imply other permissions (`system.admin`, `system.viewer`); write never silently implies read. Roles and their grants live in the database, editable at runtime, and the seed reconciles the code catalog into the DB idempotently. Routes declare requirements with `app.auth.can(Permission.X)` / `app.auth.any(...)` — default deny.
+
 ## Project Structure
 
 ```text
 src/
+  acl/
+    slugs.ts        # Permission enum — single source of truth
+    catalog.ts      # compile-time-complete permission metadata
+    implied.ts      # explicit wildcard expansion
+    presets.ts      # built-in roles seeded into the DB
+    acl.test.ts
   app/
     auth/
       handler.ts
+      refresh-cookie.ts
       repository.ts
       routes.ts
       schema.ts
@@ -178,29 +197,40 @@ src/
       types.ts
     base/
     gallery/
+    queue/          # ACL-guarded queue admin endpoints
   config/
-    environment.ts
+    env.ts          # TypeBox-validated environment (fail-fast)
+    environment.ts  # typed AppConfig assembled from env
     schema.ts
   database/
+    connection.ts
     db.d.ts
     helpers.ts
     migrate.ts
     migrations/
+    seed-acl.ts
+    seed-admin.ts
   plugins/
-    bcrypt.ts
     cache.ts
     db.ts
+    input-guard.ts
     jwt.ts
     nodemailer.ts
     pgboss.ts
-    s3object.ts
     schemas.ts
+    storage.ts
   queue/
     base/
     templates/
     workers/
     config.ts
     index.ts
+  tests/
+    helper.ts       # buildApp() for integration tests
+    *.test.ts
+  utils/
+    password.ts     # argon2id hash/verify
+    rate-limit.ts   # PG-backed fixed-window limiter
   routes.ts
   server.ts
 ```
@@ -241,11 +271,13 @@ Queue-related code is isolated here so the application can publish jobs without 
 
 The project uses these path aliases:
 
+- `#acl/*`
 - `#app/*`
 - `#config/*`
 - `#database/*`
 - `#plugins/*`
 - `#queue/*`
+- `#utils/*`
 
 These aliases are part of the template’s readability strategy. Use them consistently instead of deep relative import chains.
 
@@ -340,6 +372,7 @@ The default `docker-compose.yml` starts:
 
 - `app` on `localhost:3000`
 - PostgreSQL on `localhost:5432`
+- MinIO object storage on `localhost:9000` (console on `localhost:9001`)
 - Mailpit SMTP on `localhost:1025`
 - Mailpit UI on `localhost:8025`
 
@@ -354,6 +387,8 @@ make db-migrate
 make db-migrate-up
 make db-migrate-down
 make db-status
+make db-reset      # rollback all -> migrate -> seed ACL + admin
+make db-seed       # reconcile ACL catalog + ensure seed admin
 make db-types
 make db-query SQL="SELECT * FROM auth_users"
 make db-shell
@@ -417,9 +452,27 @@ The server uses `close-with-grace` and Fastify lifecycle hooks so the HTTP serve
 
 `@fastify/under-pressure` is enabled so the application has baseline protection and visibility around event loop and memory pressure from the start.
 
+### Password Hashing
+
+Passwords are hashed with argon2id using OWASP-recommended parameters (19 MiB memory, 2 iterations). The shared implementation lives in `src/utils/password.ts` so the auth service and the seed scripts can never drift apart.
+
+### Rate Limiting And Input Hardening
+
+Login, OTP request, and OTP verification are rate limited through an atomic counter on the cache table — fixed windows, hashed keys, no Redis. A global `preValidation` guard additionally rejects HTML/script-looking content in public write payloads as defense-in-depth against stored XSS.
+
 ### Environment Normalization
 
-All runtime configuration is parsed in `src/config/environment.ts`. This is intentional. Backend configuration becomes much easier to reason about when values are normalized once and then consumed as typed config everywhere else.
+All runtime configuration is validated at boot against a TypeBox schema in `src/config/env.ts` — malformed or missing values stop the server with a readable error, and production refuses to boot on absent secrets (`requireInProd`). The typed `AppConfig` in `src/config/environment.ts` is the only thing the rest of the codebase consumes.
+
+## Testing
+
+Tests use Node's built-in runner. Unit tests sit next to their subject (`src/acl/acl.test.ts`); integration tests live in `src/tests` and boot the real app via `buildApp()`, exercising routes with `app.inject()` against a migrated, seeded PostgreSQL — no HTTP listener, no MinIO/SMTP needed.
+
+```sh
+yarn test        # builds, then runs dist/**/*.test.js
+```
+
+CI (`.github/workflows/integrate.yml`) runs biome, typecheck, migrations + seeds against a PostgreSQL service, and the full test suite on every PR.
 
 ## Best Practices For Extending The Template
 

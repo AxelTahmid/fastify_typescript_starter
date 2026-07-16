@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
-import type { SendOtpEmailPayload } from "./types.js"
 import { renderOtpTemplate } from "../templates/otp.js"
+import type { SendOtpEmailPayload } from "./types.js"
 
 export const createSendOtpEmailHandler =
     (app: FastifyInstance) =>

@@ -162,8 +162,10 @@ async function fastJWT(app: FastifyInstance) {
             throw app.httpErrors.unauthorized("Refresh token has been revoked")
         }
 
+        // iat is second-granular, so reject <= watermark: every token issued
+        // at or before the revoke-all instant is dead (fail closed on ties)
         const watermark = await app.cache.get<number>(REVOKE_ALL_KEY(payload.id))
-        if (watermark && payload.iat && payload.iat < watermark) {
+        if (watermark && payload.iat && payload.iat <= watermark) {
             throw app.httpErrors.unauthorized("Session has been revoked")
         }
 

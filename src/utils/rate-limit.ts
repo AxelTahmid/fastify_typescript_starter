@@ -8,16 +8,22 @@ import type { FastifyInstance } from "fastify"
  *
  *   await assertRateLimit(app, `login:${ip}`, 5, 300)
  */
+const digestFor = (key: string) => createHash("sha256").update(key).digest("hex").slice(0, 32)
+
 export async function assertRateLimit(
     app: FastifyInstance,
     key: string,
     limit: number,
     windowSeconds: number,
 ): Promise<void> {
-    const digest = createHash("sha256").update(key).digest("hex").slice(0, 32)
-    const count = await app.cache.increment(`ratelimit:${digest}`, windowSeconds)
+    const count = await app.cache.increment(`ratelimit:${digestFor(key)}`, windowSeconds)
 
     if (count > limit) {
         throw app.httpErrors.tooManyRequests("Too many attempts, please try again later")
     }
+}
+
+/** Reset a window early — e.g. a successful login clears its abuse budget. */
+export async function clearRateLimit(app: FastifyInstance, key: string): Promise<void> {
+    await app.cache.flush(`ratelimit:${digestFor(key)}`)
 }

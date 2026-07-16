@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url"
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox"
 import closeWithGrace from "close-with-grace"
-import fastify from "fastify"
+import fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify"
 
 import conf from "#config/environment.js"
 import cache from "#plugins/cache.js"
@@ -65,7 +65,7 @@ export const createServer = async () => {
     // 4xx keep their message (clients need it); 5xx are logged in full and
     // genericized so internals never leak, with the request id echoed back
     // for log correlation.
-    app.setErrorHandler((error, request, reply) => {
+    app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
         const statusCode = error.statusCode ?? (reply.statusCode >= 400 ? reply.statusCode : 500)
 
         if (statusCode < 500) {

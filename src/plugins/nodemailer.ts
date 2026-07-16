@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import fp from "fastify-plugin"
-import { type SendMailOptions, type TransportOptions, type Transporter, createTransport } from "nodemailer"
+import { createTransport, type SendMailOptions, type Transporter, type TransportOptions } from "nodemailer"
 
 type Opts = {
     transport: string | TransportOptions

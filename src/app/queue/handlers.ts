@@ -20,13 +20,12 @@ class QueueAdminHandler {
         if (!queue) {
             throw this.fastify.httpErrors.notFound(`Queue: ${req.params.name} not found`)
         }
-        const queuedCount = await this.fastify.queue.getQueueSize(req.params.name)
 
         reply.code(200)
         return {
             error: false,
             message: "Queue fetched",
-            data: { ...queue, queuedCount },
+            data: queue,
         }
     }
 
