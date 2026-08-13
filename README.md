@@ -1,3 +1,5 @@
+
+
 # Fastify TypeScript Starter
 
 A production-oriented Fastify backend template built with TypeScript, PostgreSQL, Kysely, `pg-boss`, and a modular feature-first structure.
@@ -25,7 +27,7 @@ Out of the box, this template includes:
 - ES256 JWT auth: short-lived access tokens carrying permissions, revocable refresh tokens in httpOnly cookies
 - a code-first, DB-backed ACL (permission catalog in code, runtime-editable roles in the database)
 - argon2id password hashing with OWASP parameters
-- MinIO / S3-compatible object storage with presigned browser-direct uploads
+- MinIO / S3-compatible object storage with presigned browser-direct and server-side uploads (with MIME type validation)
 - a database-backed cache service that also powers rate limiting and token revocation
 - fail-fast environment validation with TypeBox
 - OpenAPI 3.1 generation and Scalar documentation UI in development
@@ -450,7 +452,7 @@ The server uses `close-with-grace` and Fastify lifecycle hooks so the HTTP serve
 
 ### Pressure Handling
 
-`@fastify/under-pressure` is enabled so the application has baseline protection and visibility around event loop and memory pressure from the start.
+`@fastify/under pressure` is enabled so the application has baseline protection and visibility around event loop and memory pressure from the start.
 
 ### Password Hashing
 
